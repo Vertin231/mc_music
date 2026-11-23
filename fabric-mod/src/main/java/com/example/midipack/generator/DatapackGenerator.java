@@ -20,6 +20,7 @@ public final class DatapackGenerator {
                 .replaceAll("_+", "_");
         if (slug.isBlank()) slug = "song";
         if (!Character.isLetter(slug.charAt(0)) && slug.charAt(0) != '_') slug = "song_" + slug;
+        if (slug.length() > 52) slug = slug.substring(0, 52);
         String suffix = backend == Backend.PLAYSOUND ? "_sound" : "_blocks";
         String namespace = ("midi_" + slug + suffix);
         if (namespace.length() > 64) namespace = namespace.substring(0, 64);
@@ -100,8 +101,10 @@ public final class DatapackGenerator {
             for (var entry : grouped.entrySet()) {
                 int tick = entry.getKey();
                 List<String> lines = commands.computeIfAbsent(tick, ignored -> new ArrayList<>());
+                Set<String> fired = new HashSet<>();
                 for (NoteEvent note : entry.getValue()) {
                     String key = blockInstrument(note) + ":" + foldNote(note.midiNote());
+                    if (!fired.add(key)) continue;
                     BlockPos control = controls.get(key);
                     lines.add("setblock " + pos(control) + " minecraft:redstone_block replace");
                     commands.computeIfAbsent(tick + 1, ignored -> new ArrayList<>())
