@@ -79,7 +79,7 @@ public final class SoundFontScreen extends Screen {
         renderBackground(context, mouseX, mouseY, delta);
         int center = width / 2, top = height / 2 - 112;
         context.drawCenteredTextWithShadow(textRenderer, title, center, top, 0xFFFFFF);
-        context.drawTextWithShadow(textRenderer, "SoundFont (.sf2/.sf3 path)", center - 150, top + 15, 0xBFC8D2);
+        context.drawTextWithShadow(textRenderer, "SoundFont (.sf2 path recommended)", center - 150, top + 15, 0xBFC8D2);
         context.drawTextWithShadow(textRenderer, "MIDI file (.mid/.midi path)", center - 150, top + 60, 0xBFC8D2);
         context.drawTextWithShadow(textRenderer, "Volume", center + 78, top + 116, 0xBFC8D2);
         context.drawTextWithShadow(textRenderer, status, Math.max(8, center - 150), top + 205, 0xFFFF55);
