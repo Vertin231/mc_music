@@ -11,6 +11,10 @@ public final class MidiParser {
     private record Raw(long tick, int track, int index, MidiMessage message) {}
 
     public static List<NoteEvent> parse(File file) throws Exception {
+        int fileType = MidiSystem.getMidiFileFormat(file).getType();
+        if (fileType != 0 && fileType != 1) {
+            throw new IllegalArgumentException("Only Standard MIDI Format 0 and 1 are supported.");
+        }
         Sequence sequence = MidiSystem.getSequence(file);
         if (sequence.getDivisionType() != Sequence.PPQ || sequence.getResolution() <= 0) {
             throw new IllegalArgumentException("Only PPQ-timed Standard MIDI files are supported.");
