@@ -96,6 +96,15 @@ public final class DatapackGenerator {
                 controls.put(entry.getKey(), control);
             }
             write(functions.resolve("setup.mcfunction"), String.join("\n", setup) + "\n");
+            List<String> stopLines = new ArrayList<>();
+            stopLines.add("scoreboard players set @s " + playing(namespace) + " 0");
+            stopLines.add("stopsound @s record");
+            for (BlockPos control : controls.values()) {
+                stopLines.add("execute if block " + pos(control)
+                        + " minecraft:redstone_block run setblock " + pos(control)
+                        + " minecraft:air replace");
+            }
+            write(functions.resolve("stop.mcfunction"), String.join("\n", stopLines) + "\n");
 
             // Reset every pulse on the following game tick before retriggering any shared block.
             for (var entry : grouped.entrySet()) {
@@ -106,9 +115,12 @@ public final class DatapackGenerator {
                     String key = blockInstrument(note) + ":" + foldNote(note.midiNote());
                     if (!fired.add(key)) continue;
                     BlockPos control = controls.get(key);
-                    lines.add("setblock " + pos(control) + " minecraft:redstone_block replace");
+                    lines.add("execute if block " + pos(control) + " minecraft:air run setblock "
+                            + pos(control) + " minecraft:redstone_block replace");
                     commands.computeIfAbsent(tick + 1, ignored -> new ArrayList<>())
-                            .add(0, "setblock " + pos(control) + " minecraft:air replace");
+                            .add(0, "execute if block " + pos(control)
+                                    + " minecraft:redstone_block run setblock "
+                                    + pos(control) + " minecraft:air replace");
                 }
             }
         }
