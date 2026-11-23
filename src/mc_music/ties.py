@@ -1,4 +1,4 @@
-"""Tie graph resolution. Tie references use sorted Measure.notes indices."""
+"""Tie references and tie-chain resolution for a Part's note segments."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -28,14 +28,15 @@ class ResolvedEvent:
 
 
 def resolve_ties(part: Part, ties=()) -> tuple[ResolvedEvent, ...]:
-    events = []
-    locations = {}
+    """Merge contiguous same-pitch note segments into sustained events."""
+    events, locations = [], {}
     offset = Fraction(0)
     for mi, measure in enumerate(part.measures):
         for ni, note in enumerate(measure.notes):
             ref = NoteRef(mi, ni)
-            locations[ref] = (offset + note.start, note)
-            events.append((ref, offset + note.start, note))
+            absolute = offset + note.start
+            locations[ref] = (absolute, note)
+            events.append((ref, absolute, note))
         offset += measure.length
 
     outgoing, incoming = {}, {}
@@ -63,15 +64,14 @@ def resolve_ties(part: Part, ties=()) -> tuple[ResolvedEvent, ...]:
             continue
         current = ref
         duration = note.duration
-        chain_seen = set()
+        chain_seen = {ref}
         while current in outgoing:
+            current = outgoing[current]
             if current in chain_seen:
                 raise ValueError("tie graph contains a cycle")
             chain_seen.add(current)
-            current = outgoing[current]
             duration += locations[current][1].duration
         visited.update(chain_seen)
-        visited.add(ref)
         resolved.append(ResolvedEvent(start, duration, note.midi, note.velocity))
 
     if len(visited) != len(events):
@@ -79,5 +79,4 @@ def resolve_ties(part: Part, ties=()) -> tuple[ResolvedEvent, ...]:
     return tuple(sorted(resolved, key=lambda e: (e.start, e.midi, e.duration)))
 
 
-# Compatibility name used in the project plan.
 resolve_part = resolve_ties
