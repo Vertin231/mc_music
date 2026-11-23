@@ -86,7 +86,8 @@ class NoteMatrix:
         if not np.isfinite(factor) or factor <= 0:
             raise ValueError("factor must be finite and positive")
         moved = np.rint(self.velocity.astype(np.float64) * factor)
-        return self._replace(velocity=np.clip(moved, 1, 127))
+        moved = np.clip(moved, 1, 127).astype(np.int8)
+        return self._replace(velocity=moved)
 
     def quantize(self, grid: int, strength: float = 1.0):
         grid = _integer(grid, "grid")
@@ -98,7 +99,10 @@ class NoteMatrix:
             onset = int(onset)
             target = ((2 * onset + grid) // (2 * grid)) * grid
             delta = Fraction((target - onset) * strength.numerator, strength.denominator)
-            adjustment = (2 * delta.numerator + delta.denominator) // (2 * delta.denominator)
+            if delta >= 0:
+                adjustment = (2 * delta.numerator + delta.denominator) // (2 * delta.denominator)
+            else:
+                adjustment = -((2 * (-delta).numerator + (-delta).denominator) // (2 * (-delta).denominator))
             moved.append(max(0, onset + adjustment))
         return self._replace(start=np.asarray(moved, dtype=np.int64))
 
