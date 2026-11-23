@@ -43,7 +43,10 @@ public final class MidiPackMod implements ModInitializer {
         if (!ns.matches("[a-z0-9_]{1,64}") || !(action.equals("play") || action.equals("stop"))) {
             player.sendMessage(Text.literal("无效的播放请求。"), false); return;
         }
-        server.getCommandManager().executeWithPrefix(player.getCommandSource(), "function " + ns + ":" + action);
+        // Physical note-block structures are placed and ticked in the Overworld.
+        // Use the server command source so changing the player's dimension cannot move playback.
+        var source = ns.endsWith("_blocks") ? server.getCommandSource() : player.getCommandSource();
+        server.getCommandManager().executeWithPrefix(source, "function " + ns + ":" + action);
     }
 
     private static void importMidi(MinecraftServer server, ServerPlayerEntity player,
