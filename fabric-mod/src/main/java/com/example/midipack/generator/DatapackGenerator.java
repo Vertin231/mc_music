@@ -60,15 +60,16 @@ public final class DatapackGenerator {
         if (countParts(events) > MAX_PARTS) {
             throw new IllegalArgumentException("声部数量超过限制：最多支持 " + MAX_PARTS + " 条并行轨道。");
         }
-        List<NoteEvent> physicalEvents = backend == Backend.NOTE_BLOCK ? expandPhysicalSustain(events) : events;\n        if (backend == Backend.NOTE_BLOCK && physicalEvents.size() > MAX_PHYSICAL_NOTES) {
+        List<NoteEvent> physicalEvents = backend == Backend.NOTE_BLOCK ? expandPhysicalSustain(events) : events;
+        if (backend == Backend.NOTE_BLOCK && physicalEvents.size() > MAX_PHYSICAL_NOTES) {
             throw new IllegalArgumentException("音符盒轨道最多支持 " + MAX_PHYSICAL_NOTES
                     + " 个音符事件；当前文件包含 " + events.size() + " 个。");
         }
-        if (backend == Backend.NOTE_BLOCK && totalPhysicalRepeaterCount(physicalEvents) > MAX_PHYSICAL_REPEATERS) {
+        if (backend == Backend.NOTE_BLOCK && totalPhysicalRepeaterCount(events) > MAX_PHYSICAL_REPEATERS) {
             throw new IllegalArgumentException("实体红石线路需要的中继器超过安全上限 "
                     + MAX_PHYSICAL_REPEATERS + " 个。");
         }
-        if (backend == Backend.NOTE_BLOCK && maxChordSize(physicalEvents) > MAX_CHORD_NOTES) {
+        if (backend == Backend.NOTE_BLOCK && maxChordSize(events) > MAX_CHORD_NOTES) {
             throw new IllegalArgumentException("单个同时发声的和弦最多支持 " + MAX_CHORD_NOTES
                     + " 个音符；当前和弦包含 " + maxChordSize(events) + " 个。");
         }
@@ -233,7 +234,7 @@ public final class DatapackGenerator {
     public static int maxChordSize(List<NoteEvent> events) {
         Map<Part, Map<Integer, Integer>> counts = new HashMap<>();
         int max = 1;
-        for (NoteEvent note : events) {
+        for (NoteEvent note : expandPhysicalSustain(events)) {
             int count = counts.computeIfAbsent(part(note), ignored -> new HashMap<>())
                     .merge(note.mcTick(), 1, Integer::sum);
             max = Math.max(max, count);
@@ -243,7 +244,7 @@ public final class DatapackGenerator {
 
     public static int totalPhysicalRepeaterCount(List<NoteEvent> events) {
         Map<Part, SortedSet<Integer>> ticks = new HashMap<>();
-        for (NoteEvent note : events) {
+        for (NoteEvent note : expandPhysicalSustain(events)) {
             ticks.computeIfAbsent(part(note), ignored -> new TreeSet<>()).add(note.mcTick());
         }
         int total = 0;
@@ -260,7 +261,7 @@ public final class DatapackGenerator {
 
     public static int maxPhysicalRepeaterCount(List<NoteEvent> events) {
         Map<Part, SortedSet<Integer>> ticks = new HashMap<>();
-        for (NoteEvent note : events) {
+        for (NoteEvent note : expandPhysicalSustain(events)) {
             ticks.computeIfAbsent(part(note), ignored -> new TreeSet<>()).add(note.mcTick());
         }
         int maximum = 0;
