@@ -4,6 +4,9 @@ from fractions import Fraction
 from math import isfinite
 from collections.abc import Iterator
 import operator
+import numpy as np
+from timing import PPQ_DEFAULT, fraction_to_ppq
+from matrix import NoteMatrix
 
 # Utility
 
@@ -110,8 +113,8 @@ class Measure:
     A measure containing measure-relative notes.
     length is measured in quarter-note units (beats), not seconds or ticks.
     Accepts a tuple or list of notes and normalizes it to a tuple.
-    Notes are currently required to end within this measure; cross-measure
-    ties have not yet been implemented.
+    Notes must begin inside the measure, but may extend past its end
+    to represent a sustained event across a barline. Tie segments are separate notes.
     """
 
     length: Fraction
@@ -135,11 +138,10 @@ class Measure:
             if not isinstance(note, Note):
                 raise TypeError("notes must contain Note objects")
 
-            if note.end > self.length:
+            if note.start >= self.length:
                 raise ValueError(
-                    f"Note exceeds measure boundary: "
-                    f"start={note.start}, end={note.end}, "
-                    f"length={self.length}"
+                    f"Note onset must be inside measure: "
+                    f"start={note.start}, length={self.length}"
                 )
 
         notes = tuple(
@@ -284,18 +286,42 @@ class Part:
         return matches[0]
 
     def iter_absolute(self) -> Iterator[tuple[Fraction, Note]]:
-        """
-        Expand measure-relative note positions into absolute positions.
-        """
-
+        """Expand measure-relative note positions into absolute positions."""
         offset = Fraction(0)
-
         for measure in self.measures:
-
             for note in measure.notes:
                 yield offset + note.start, note
-
             offset += measure.length
+
+    def to_matrix(self, ppq: int = PPQ_DEFAULT, ties=()) -> NoteMatrix:
+        """Convert to absolute PPQ ticks; optionally merge tie chains first."""
+        if ties:
+            from ties import resolve_ties
+            resolved = resolve_ties(self, ties)
+        else:
+            resolved = None
+        source = resolved if resolved is not None else tuple(
+            (start, note.duration, note.midi, note.velocity)
+            for start, note in self.iter_absolute()
+        )
+        starts, durations, midis, velocities, instruments = [], [], [], [], []
+        for event in source:
+            if resolved is not None:
+                start, duration, midi, velocity = (
+                    event.start, event.duration, event.midi, event.velocity
+                )
+            else:
+                start, duration, midi, velocity = event
+            starts.append(fraction_to_ppq(start, ppq))
+            durations.append(fraction_to_ppq(duration, ppq))
+            midis.append(midi)
+            velocities.append(velocity)
+            instruments.append(self.instrument.value)
+        return NoteMatrix(ppq, np.array(starts, dtype=np.int64),
+                        np.array(durations, dtype=np.int64),
+                        np.array(midis, dtype=np.int8),
+                        np.array(velocities, dtype=np.int8),
+                        np.array(instruments, dtype=np.int8))
 
 # Score
 
@@ -351,6 +377,20 @@ class Score:
     def total_beats(self) -> Fraction:
 
         return self.parts[0].total_beats()
+
+    def to_matrix(self, ppq: int = PPQ_DEFAULT, ties_by_part=None) -> NoteMatrix:
+        """Flatten the score into one absolute-time NoteMatrix."""
+        ties_by_part = ties_by_part or {}
+        matrices = [part.to_matrix(ppq, ties=ties_by_part.get(part.instrument, ()))
+                    for part in self.parts]
+        return NoteMatrix(
+            ppq,
+            np.concatenate([m.start for m in matrices]),
+            np.concatenate([m.duration for m in matrices]),
+            np.concatenate([m.midi for m in matrices]),
+            np.concatenate([m.velocity for m in matrices]),
+            np.concatenate([m.instrument for m in matrices]),
+        )
 
     def absolute_events(
         self
