@@ -51,8 +51,11 @@ public final class MidiPackScreen extends Screen {
             MidiPackClient.action(MidiPackClient.lastNamespace + "_sound", "stop");
             MidiPackClient.action(MidiPackClient.lastNamespace + "_blocks", "stop");
         }).dimensions(center - 108, top + 133, 216, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Local SoundFont player"), button -> {
+            client.setScreen(new SoundFontScreen(this));
+        }).dimensions(center - 108, top + 160, 216, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("Done"), button -> close())
-                .dimensions(center - 108, top + 160, 216, 20).build());
+                .dimensions(center - 108, top + 187, 216, 20).build());
     }
 
     private void setCoordinates(BlockPos pos) {
