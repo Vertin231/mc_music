@@ -44,8 +44,8 @@ public class MidiPackClient implements ClientModInitializer {
                 .replaceAll("_+", "_");
         if (slug.isBlank()) slug = "song";
         if (!Character.isLetter(slug.charAt(0)) && slug.charAt(0) != '_') slug = "song_" + slug;
+        if (slug.length() > 52) slug = slug.substring(0, 52);
         lastNamespace = "midi_" + slug;
-        if (lastNamespace.length() > 64) lastNamespace = lastNamespace.substring(0, 64);
 
         PacketByteBuf buf = PacketByteBufs.create();
         buf.writeString(filename);
