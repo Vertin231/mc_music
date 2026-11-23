@@ -47,12 +47,12 @@ public final class DatapackGenerator {
                 "scoreboard objectives add " + objective(namespace) + " dummy\n"
                 + "scoreboard objectives add " + playing(namespace) + " dummy\n");
         write(functions.resolve("stop.mcfunction"),
-                "scoreboard players set @a " + playing(namespace) + " 0\n"
-                + "stopsound @a record\n");
+                "scoreboard players set @s " + playing(namespace) + " 0\n"
+                + "stopsound @s record\n");
         write(functions.resolve("play.mcfunction"),
                 (backend == Backend.NOTE_BLOCK ? "function " + namespace + ":setup\n" : "")
-                + "scoreboard players set @a " + objective(namespace) + " 0\n"
-                + "scoreboard players set @a " + playing(namespace) + " 1\n");
+                + "scoreboard players set @s " + objective(namespace) + " 0\n"
+                + "scoreboard players set @s " + playing(namespace) + " 1\n");
 
         Map<Integer, List<NoteEvent>> grouped = events.stream().collect(Collectors.groupingBy(
                 NoteEvent::mcTick, TreeMap::new, Collectors.toList()));
