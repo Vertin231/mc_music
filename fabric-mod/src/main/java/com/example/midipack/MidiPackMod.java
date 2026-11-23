@@ -45,7 +45,7 @@ public class MidiPackMod implements ModInitializer {
                             return;
                         }
                         String function = namespace + ":" + action;
-                        server.getCommandManager().executeWithPrefix(server.getCommandSource(), "function " + function);
+                        server.getCommandManager().executeWithPrefix(player.getCommandSource(), "function " + function);
                         player.sendMessage(Text.literal("MIDI " + action + " 请求已执行：" + function), false);
                     });
                 });
