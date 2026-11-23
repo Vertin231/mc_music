@@ -102,17 +102,17 @@ class Part:
 
     def to_matrix(self, ppq: int = PPQ_DEFAULT, ties=()):
         from .matrix import score_to_matrix
-        return score_to_matrix(Score(120, (self,)), ppq, {0: tuple(ties)})
+        return score_to_matrix(Score(Fraction(120), (self,)), ppq, {0: tuple(ties)})
 
 
 @dataclass(frozen=True, slots=True)
 class Score:
-    bpm: float
+    bpm: int | float | Fraction
     parts: tuple[Part, ...]
     title: str = ""
 
     def __post_init__(self):
-        if isinstance(self.bpm, bool) or not isinstance(self.bpm, (int, float)):
+        if isinstance(self.bpm, bool) or not isinstance(self.bpm, (int, float, Fraction)):
             raise TypeError("bpm must be numeric")
         if not isfinite(self.bpm) or self.bpm <= 0:
             raise ValueError("bpm must be finite and positive")
