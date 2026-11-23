@@ -109,8 +109,9 @@ public final class MidiPackMod implements ModInitializer {
             return false;
         }
         int repeaters=DatapackGenerator.maxPhysicalRepeaterCount(events);
-        if(repeaters>DatapackGenerator.MAX_PHYSICAL_REPEATERS) {
-            player.sendMessage(Text.literal("红石中继器数量超过安全上限："+DatapackGenerator.MAX_PHYSICAL_REPEATERS+" 个。"),false);
+        int totalRepeaters=DatapackGenerator.totalPhysicalRepeaterCount(events);
+        if(totalRepeaters>DatapackGenerator.MAX_PHYSICAL_REPEATERS) {
+            player.sendMessage(Text.literal("红石中继器总数超过安全上限："+DatapackGenerator.MAX_PHYSICAL_REPEATERS+" 个。"),false);
             return false;
         }
         int chordSize=DatapackGenerator.maxChordSize(events);
