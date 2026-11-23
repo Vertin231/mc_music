@@ -35,3 +35,18 @@ Time positions and durations use `Fraction`, measured in quarter-note units (bea
 ## Development approach
 
 This is a learning project: the implementation is developed step by step, with an emphasis on understanding the data model, writing tests, and keeping each change small and reviewable.
+
+
+## NumPy and PPQ layer
+
+- `timing.py`: exact `Fraction` to PPQ conversion and final Minecraft tick rounding. Default PPQ is 960.
+- `matrix.py`: `NoteMatrix` stores onset/duration as int64 PPQ ticks and pitch/velocity/instrument as compact arrays; arrays are read-only. Includes sorting, transposition, velocity scaling, onset quantization, onset grouping, and conversion to game ticks.
+- `ties.py`: `NoteRef`, `Tie`, and `resolve_ties()` merge contiguous same-pitch note segments in a Part. Tie resolution happens before PPQ/NumPy conversion.
+- `Measure` allows note durations to extend past a barline, while each onset must lie within its own measure. This supports sustained events crossing barlines.
+- `Part.to_matrix(ppq=960, ties=...)` and `Score.to_matrix(ppq=960, ties_by_part=...)` convert to the event matrix.
+
+### PPQ behavior
+
+Time remains measured in quarter-note units. PPQ is pulses per quarter note; 960 is the default. Fraction conversion must be exact or raises `ValueError`. Conversion from PPQ to Minecraft ticks is a final approximation using round-half-up. Quantization rounds onset to the nearest grid, then applies strength.
+
+This is an initial implementation; MIDI import, user-friendly tie input parsing, and backend compiler output remain future work.
