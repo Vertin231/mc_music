@@ -40,8 +40,7 @@ public final class MidiPackMod implements ModInitializer {
         if (!player.hasPermissionLevel(2)) {
             player.sendMessage(Text.literal("需要管理员权限才能控制 MIDI 数据包。"), false); return;
         }
-        if (!ns.matches("[a-z0-9_]{1,64}") || !(action.equals("play") || action.equals("pause")
-                || action.equals("resume") || action.equals("stop"))) {
+        if (!ns.matches("[a-z0-9_]{1,64}") || !(action.equals("play") || action.equals("stop"))) {
             player.sendMessage(Text.literal("无效的播放请求。"), false); return;
         }
         server.getCommandManager().executeWithPrefix(player.getCommandSource(), "function " + ns + ":" + action);
@@ -97,12 +96,17 @@ public final class MidiPackMod implements ModInitializer {
         if(origin.getY()<world.getBottomY()||origin.getY()+2>=world.getTopY()) {
             player.sendMessage(Text.literal("放置 Y 坐标超出世界高度范围。"),false); return false;
         }
+        if(events.size()>DatapackGenerator.MAX_PHYSICAL_NOTES) {
+            player.sendMessage(Text.literal("音符事件超过线性音符盒轨道上限："+DatapackGenerator.MAX_PHYSICAL_NOTES+" 个。"),false);
+            return false;
+        }
         int parts=DatapackGenerator.countParts(events);
         if(parts>DatapackGenerator.MAX_PARTS) {
             player.sendMessage(Text.literal("声部数量超过限制：最多支持 "+DatapackGenerator.MAX_PARTS+" 条并行轨道。"),false);
             return false;
         }
-        BlockPos end=origin.add((DatapackGenerator.MAX_STATIONS_PER_PART-1)*3+2,1,Math.max(0,parts-1)*3);
+        int longestLane=DatapackGenerator.maxPartSize(events);
+        BlockPos end=origin.add((longestLane-1)*3+1,1,Math.max(0,parts-1)*3);
         if(!world.getWorldBorder().contains(origin)||!world.getWorldBorder().contains(end)) {
             player.sendMessage(Text.literal("多声部线性布局超出世界边界，请调整 X/Z 起点。"),false); return false;
         }
@@ -120,11 +124,11 @@ public final class MidiPackMod implements ModInitializer {
             int parts=DatapackGenerator.countParts(events);
             player.sendMessage(Text.literal("已导入 "+events.size()+" 个音符事件，识别出 "+parts
                     +" 条声部轨道（Track + Channel）。"),false);
-            player.sendMessage(Text.literal("第一条轨道首个支撑方块："+origin.getX()+" "+origin.getY()+" "+origin.getZ()
-                    +"；声部沿 +Z 分行，每条轨道沿 +X 延伸。"),false);
+            player.sendMessage(Text.literal("首条轨道起点（支撑方块）："+origin.getX()+" "+origin.getY()+" "+origin.getZ()
+                    +"；声部沿 +Z 分行，音符按时间顺序沿 +X 排列。"),false);
             player.sendMessage(Text.literal("playsound：/function "+soundNs+":play"),false);
-            player.sendMessage(Text.literal("音符盒：/function "+blockNs+":play"),false);
-            player.sendMessage(Text.literal("预留约 770 格 X 向长度，以及每条声部间隔 3 格的 Z 向空间；建议先备份存档。"),false);
+            player.sendMessage(Text.literal("线性音符盒轨道：/function "+blockNs+":play"),false);
+            player.sendMessage(Text.literal("每个音符事件对应一个音符盒站点；所有声部共用 50 ms 游戏刻时钟。建议先备份存档。"),false);
         } catch(Exception e) {
             player.sendMessage(Text.literal("数据包生成失败："+safeMessage(e)),false);
         }
