@@ -100,7 +100,7 @@ public final class MidiPackScreen extends Screen {
         context.drawCenteredTextWithShadow(textRenderer, Text.literal("Z"),
                 width / 2 + 75, height / 2 - 99, 0xFFFFFF);
         context.drawCenteredTextWithShadow(textRenderer,
-                Text.literal("Linear layout: all note blocks run along +X"),
+                Text.literal("One +X lane per Track + Channel; lanes spaced along +Z"),
                 width / 2, height / 2 + 99, 0xA0A0A0);
         super.render(context, mouseX, mouseY, delta);
     }
