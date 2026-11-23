@@ -2,10 +2,11 @@ from fractions import Fraction
 import json
 
 import mido
+import numpy as np
 import pytest
 
 from mc_music import (
-    Instrument, Measure, Note, NoteRef, Part, Score, Tie,
+    Instrument, Measure, Note, NoteMatrix, NoteRef, Part, Score, Tie,
     compile_to_noteblock, load_midi, to_note_block_note, write_datapack,
 )
 
@@ -64,6 +65,21 @@ def test_tie_chain_merges_into_one_event():
     matrix = part.to_matrix(ties=(Tie(NoteRef(0, 0), NoteRef(1, 0)),))
     assert len(matrix) == 1
     assert matrix.duration.tolist() == [2 * 960]
+
+
+def test_matrix_batch_operations():
+    matrix = NoteMatrix(
+        960,
+        np.array([10, 30]),
+        np.array([10, 10]),
+        np.array([60, 64]),
+        np.array([80, 100]),
+        np.array([0, 2]),
+    )
+    assert matrix.transpose(2).midi.tolist() == [62, 66]
+    assert matrix.velocity_curve(0.5).velocity.tolist() == [40, 50]
+    assert matrix.quantize(20, strength=0.5).start.tolist() == [15, 35]
+    assert not matrix.start.flags.writeable
 
 
 def test_midi_import(tmp_path):
