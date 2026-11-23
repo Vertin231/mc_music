@@ -1,17 +1,17 @@
 # MIDI Pack — Fabric 1.20.4
 
-A client GUI + server-side MIDI importer for Minecraft Java Edition 1.20.4 (Java 17).
+MIDI Pack is a client GUI and server-side MIDI-to-datapack importer for Minecraft Java 1.20.4, Fabric, and Java 17.
 
 ## Features
 
 - Press **M** to open the in-game MIDI Pack screen.
-- **Import MIDI** opens the operating system file chooser (Swing).
-- Uploads a MIDI file to the integrated/dedicated server through a Fabric custom payload.
-- Parses Standard MIDI Format 0/1 with Java's built-in `javax.sound.midi`, including tempo changes.
-- Generates two datapacks into the current world's `datapacks/` directory:
-  - `playsound`: sound events with MIDI pitch and velocity approximations.
-  - `note-block`: physical note blocks with adjacent one-tick redstone-block pulses.
-- Reloads datapacks after generation. Use the GUI to start either backend or stop playback.
+- Import a .mid / .midi file through the operating system's native file dialog.
+- Transfer the selected file to the integrated or dedicated server using a Fabric custom payload.
+- Parse Standard MIDI Format 0/1 with Java's built-in javax.sound.midi, including PPQ tempo changes and GM program changes.
+- Generate two independent datapacks in the current world's datapacks directory:
+  - **playsound** — maps MIDI pitches to note-block sound events; velocity controls volume.
+  - **note blocks** — lays out physical note blocks and triggers them with one-game-tick redstone-block pulses.
+- Play, pause, resume, and stop both backends from the GUI.
 
 ## Build
 
@@ -19,31 +19,48 @@ Requirements: JDK 17 and Gradle 8.6.
 
 From this directory:
 
-```bash
-gradle build
-```
+    gradle build --no-daemon
 
-The mod jar is written to `build/libs/`.
+The mod jar is written to build/libs/. GitHub Actions also builds the mod and publishes the jar as a workflow artifact.
 
-## Install
+## Install and use
 
 1. Install Fabric Loader for Minecraft 1.20.4.
-2. Install Fabric API for 1.20.4.
-3. Copy the built `midipack-0.1.0.jar` into `.minecraft/mods/`.
-4. Start the game and enter a world where you have permission level 2 (operator).
+2. Install Fabric API for Minecraft 1.20.4.
+3. Copy midipack-0.1.1.jar into the game's mods directory.
+4. Start a world or join a server with this mod installed on the server. The importing player must have operator permission level 2.
+5. Press M, choose Import MIDI, and select a MIDI file (maximum 512 KiB).
+6. After the server confirms import, choose either playback backend.
 
-Press **M**, import a `.mid` or `.midi` file (maximum 512 KiB), then choose a playback backend.
+The server stores the uploaded MIDI source under the world's midi_import directory and writes both datapacks under datapacks/. Datapacks are reloaded after generation.
 
-## Note-block backend safety
+## Playback controls
 
-The note-block datapack lays out note blocks around the overworld spawn point. It uses `setblock ... keep` for setup so existing blocks are not overwritten. Choose a clear area around world spawn; if positions are occupied, the corresponding note block will not be placed. During playback, adjacent control positions are temporarily replaced by redstone blocks and reset to air one game tick later. Keep this area clear.
+The GUI exposes Play for both backends, Pause both, Resume both, and Stop both. The scoreboard timer is per player. The physical note-block structure is shared world state, so the note-block backend is intended for one operator/player at a time.
 
-Vanilla note blocks cannot reproduce MIDI velocity or note-off duration. The note-block backend therefore approximates each note-on as a one-tick trigger. The playsound backend uses velocity as volume and MIDI pitch as the playsound pitch parameter.
+## Safety and limitations
 
-## Current limitations
-
-- Upload limit: 512 KiB per MIDI file.
-- Only PPQ-timed MIDI is accepted; SMPTE time division is rejected.
+- Upload size is limited to 512 KiB. The server validates the MIDI header, extension, and basename before writing into its controlled import directory.
+- Only PPQ-timed Standard MIDI Format 0/1 files are supported. SMPTE time division is rejected.
+- The parser converts absolute MIDI time to 50 ms Minecraft ticks. Very long files (over 2,000,000 game ticks) and files with over 100,000 note-on events are rejected.
 - Percussion channel 10 is mapped to a small set of vanilla note-block percussion sounds.
-- Playback control is designed for one active operator/player at a time; note-block structures are shared world objects.
-- No resource pack or custom audio is required.
+- Vanilla note blocks cannot represent MIDI velocity or note-off duration. Each note-on is a one-tick trigger; repeated identical pitches on the same game tick are coalesced by the physical note-block backend.
+- The note-block layout is placed near the overworld spawn point. The generator uses setblock ... keep, but you should still choose a clear area and make a world backup before testing.
+- The playsound backend is an approximation: GM instruments are grouped into a handful of vanilla note-block timbres, MIDI velocity maps to volume, and MIDI pitch is folded into the vanilla sound pitch range.
+- The native file picker requires a desktop environment. Headless dedicated servers do not open a file picker; importing is initiated by a connected client.
+
+## Project layout
+
+    fabric-mod/
+      build.gradle
+      gradle.properties
+      settings.gradle
+      src/main/java/com/example/midipack/
+        MidiPackMod.java
+        client/MidiPackClient.java
+        client/MidiPackScreen.java
+        client/MidiFilePicker.java
+        midi/MidiParser.java
+        midi/NoteEvent.java
+        generator/DatapackGenerator.java
+      src/main/resources/fabric.mod.json

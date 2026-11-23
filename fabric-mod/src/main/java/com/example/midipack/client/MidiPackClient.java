@@ -15,15 +15,15 @@ import org.lwjgl.glfw.GLFW;
 
 import java.util.Locale;
 
-public class MidiPackClient implements ClientModInitializer {
+public final class MidiPackClient implements ClientModInitializer {
+    public static final int MAX_MIDI_BYTES = MidiPackMod.MAX_MIDI_BYTES;
     private static KeyBinding openScreen;
     public static volatile String lastNamespace = "midi_song";
 
     @Override
     public void onInitializeClient() {
         openScreen = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key.midipack.open", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_M,
-                "category.midipack"));
+                "key.midipack.open", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_M, "category.midipack"));
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (openScreen.wasPressed()) client.setScreen(new MidiPackScreen());
         });
@@ -35,13 +35,12 @@ public class MidiPackClient implements ClientModInitializer {
             notifyUser("请先进入一个已启用 MIDI Pack 的世界或服务器。");
             return;
         }
-        if (data.length > MidiPackMod.MAX_MIDI_BYTES) {
-            notifyUser("文件超过 512 KiB，暂不支持。");
+        if (data.length == 0 || data.length > MAX_MIDI_BYTES) {
+            notifyUser("文件必须大于 0 且不超过 512 KiB。");
             return;
         }
         String base = filename.replaceFirst("(?i)\\.(mid|midi)$", "");
-        String slug = base.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_]", "_")
-                .replaceAll("_+", "_");
+        String slug = base.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_]", "_").replaceAll("_+", "_");
         if (slug.isBlank()) slug = "song";
         if (!Character.isLetter(slug.charAt(0)) && slug.charAt(0) != '_') slug = "song_" + slug;
         if (slug.length() > 52) slug = slug.substring(0, 52);
@@ -66,8 +65,9 @@ public class MidiPackClient implements ClientModInitializer {
     }
 
     public static void notifyUser(String message) {
-        if (MinecraftClient.getInstance().player != null) {
-            MinecraftClient.getInstance().player.sendMessage(Text.literal(message), false);
-        }
+        MinecraftClient client = MinecraftClient.getInstance();
+        client.execute(() -> {
+            if (client.player != null) client.player.sendMessage(Text.literal(message), false);
+        });
     }
 }
