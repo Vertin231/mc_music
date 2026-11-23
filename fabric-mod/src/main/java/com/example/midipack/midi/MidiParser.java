@@ -62,7 +62,7 @@ public final class MidiParser {
                     if (queue != null && !queue.isEmpty()) {
                         Pending start = queue.removeFirst();
                         int endTick = safeGameTick(elapsedMicros);
-                        notes.add(new NoteEvent(start.mcTick(), Math.max(0, endTick - start.mcTick()),
+                        notes.add(new NoteEvent(start.mcTick(), Math.max(1, endTick - start.mcTick()),
                                 start.track(), start.channel(), start.program(), start.pitch(), start.velocity()));
                     }
                 }
