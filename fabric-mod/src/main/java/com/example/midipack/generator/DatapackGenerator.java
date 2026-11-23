@@ -146,11 +146,11 @@ public final class DatapackGenerator {
             writeDispatch(functions, namespace, commands, "@s", clockObjective);
         } else {
             SortedMap<Part, List<NoteEvent>> byPart = new TreeMap<>();
-            for (NoteEvent note : events) {
+            for (NoteEvent note : physicalEvents) {
                 byPart.computeIfAbsent(part(note), ignored -> new ArrayList<>()).add(note);
             }
 
-            int laneSpacing = chordRadius(maxChordSize(events)) * 2 + 2;
+            int laneSpacing = chordRadius(maxChordSize(physicalEvents)) * 2 + 2;
             String inputPosition = (origin.getX() - 1) + " " + (origin.getY() + 1)
                     + " " + origin.getZ();
             StringBuilder setup = new StringBuilder();
@@ -300,54 +300,60 @@ public final class DatapackGenerator {
 
     private static void appendRepeaterStage(StringBuilder setup, int x, int y, int z,
                                             int delay, List<NoteEvent> chord) {
-        int chordRadius = chordRadius(Math.max(1, chord.size()));
+        int radius = chordRadius(Math.max(1, chord.size()));
 
+        // All components share a flat, supported floor. The repeater points east.
         setup.append("setblock ").append(x).append(' ').append(y).append(' ').append(z)
-                .append(" minecraft:stone keep\\n");
+                .append(" minecraft:stone keep\n");
         setup.append("setblock ").append(x).append(' ').append(y + 1).append(' ').append(z)
-                .append(" minecraft:repeater[delay=").append(delay).append(",facing=east] keep\\n");
+                .append(" minecraft:repeater[delay=").append(delay).append(",facing=east] keep\n");
 
-        // The repeater powers an opaque relay block. The dust bus on top of
-        // the relay fans out to all notes in this chord.
-        setup.append("setblock ").append(x + 1).append(' ').append(y + 1).append(' ').append(z)
-                .append(" minecraft:stone keep\\n");
-
-        if (!chord.isEmpty()) {
-            // Continuous dust bus across the chord width. Each wire is placed
-            // on a solid support block so the bus is stable and connected.
-            for (int offset = -chordRadius; offset <= chordRadius; offset++) {
-                setup.append("setblock ").append(x + 1).append(' ').append(y + 1).append(' ')
-                        .append(z + offset).append(" minecraft:stone keep\\n");
-                setup.append("setblock ").append(x + 1).append(' ').append(y + 2).append(' ')
-                        .append(z + offset).append(" minecraft:redstone_wire keep\\n");
+        // The repeater directly powers the first dust. The second dust continues
+        // the centre line into the next repeater at x + 3.
+        if (chord.isEmpty()) {
+            for (int dx = 1; dx <= 2; dx++) {
+                setup.append("setblock ").append(x + dx).append(' ').append(y).append(' ').append(z)
+                        .append(" minecraft:stone keep\n");
+                setup.append("setblock ").append(x + dx).append(' ').append(y + 1).append(' ').append(z)
+                        .append(" minecraft:redstone_wire keep\n");
             }
-
-            // A redstone lamp sits beside the bus and lights for each event group.
-            setup.append("setblock ").append(x + 1).append(' ').append(y + 1).append(' ')
-                    .append(z - chordRadius - 1).append(" minecraft:stone keep\\n");
-            setup.append("setblock ").append(x + 1).append(' ').append(y + 2).append(' ')
-                    .append(z - chordRadius - 1).append(" minecraft:redstone_lamp keep\\n");
-
-            for (int i = 0; i < chord.size(); i++) {
-                NoteEvent note = chord.get(i);
-                int radius = i / 2 + 1;
-                int branchZ = z + ((i % 2 == 0) ? radius : -radius);
-
-                // The note-block instrument base can be sand or another
-                // gravity-affected block. Place a solid support underneath it.
-                setup.append("setblock ").append(x + 2).append(' ').append(y).append(' ')
-                        .append(branchZ).append(" minecraft:stone keep\\n");
-                setup.append("setblock ").append(x + 2).append(' ').append(y + 1).append(' ')
-                        .append(branchZ).append(' ').append(baseBlock(blockInstrument(note))).append(" keep\\n");
-                appendNoteBlock(setup, x + 2, y + 2, branchZ, note);
-            }
+            return;
         }
 
-        // A separate dust bridge carries the pulse to the next repeater.
+        // A continuous transverse dust bus distributes one pulse to the chord.
+        // Note blocks sit beside the bus (not on top of it), so no wire is overwritten.
+        for (int offset = -radius; offset <= radius; offset++) {
+            setup.append("setblock ").append(x + 1).append(' ').append(y).append(' ').append(z + offset)
+                    .append(" minecraft:stone keep\n");
+            setup.append("setblock ").append(x + 1).append(' ').append(y + 1).append(' ').append(z + offset)
+                    .append(" minecraft:redstone_wire keep\n");
+        }
+
+        // The centre wire continues straight to the next repeater.
         setup.append("setblock ").append(x + 2).append(' ').append(y).append(' ').append(z)
-                .append(" minecraft:stone keep\\n");
+                .append(" minecraft:stone keep\n");
         setup.append("setblock ").append(x + 2).append(' ').append(y + 1).append(' ').append(z)
-                .append(" minecraft:redstone_wire keep\\n");
+                .append(" minecraft:redstone_wire keep\n");
+
+        // Lamp is placed beside the end of the bus, with its own solid support.
+        setup.append("setblock ").append(x + 1).append(' ').append(y).append(' ').append(z - radius - 1)
+                .append(" minecraft:stone keep\n");
+        setup.append("setblock ").append(x + 1).append(' ').append(y + 1).append(' ').append(z - radius - 1)
+                .append(" minecraft:redstone_lamp keep\n");
+
+        for (int i = 0; i < chord.size(); i++) {
+            NoteEvent note = chord.get(i);
+            int offset = i / 2 + 1;
+            int branchZ = z + ((i % 2 == 0) ? offset : -offset);
+
+            // Solid support below the instrument block; note block is adjacent
+            // to the dust bus and receives power directly from it.
+            setup.append("setblock ").append(x + 2).append(' ').append(y - 1).append(' ').append(branchZ)
+                    .append(" minecraft:stone keep\n");
+            setup.append("setblock ").append(x + 2).append(' ').append(y).append(' ').append(branchZ)
+                    .append(' ').append(baseBlock(blockInstrument(note))).append(" keep\n");
+            appendNoteBlock(setup, x + 2, y + 1, branchZ, note);
+        }
     }
 
     private static void appendNoteBlock(StringBuilder setup, int x, int y, int z, NoteEvent note) {
