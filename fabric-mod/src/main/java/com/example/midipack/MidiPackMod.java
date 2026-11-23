@@ -16,6 +16,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 
 public final class MidiPackMod implements ModInitializer {
     public static final Identifier UPLOAD_ID = new Identifier("midipack", "upload_midi");
@@ -34,11 +36,12 @@ public final class MidiPackMod implements ModInitializer {
                 (server, player, handler, buf, responseSender) -> {
                     String namespace = buf.readString(64);
                     String action = buf.readString(16);
-                    server.execute(() -> handleAction(player, namespace, action));
+                    server.execute(() -> handleAction(server, player, namespace, action));
                 });
     }
 
-    private static void handleAction(ServerPlayerEntity player, String namespace, String action) {
+    private static void handleAction(MinecraftServer server, ServerPlayerEntity player,
+                                     String namespace, String action) {
         if (!player.hasPermissionLevel(2)) {
             player.sendMessage(Text.literal("需要管理员权限才能控制 MIDI 数据包。"), false);
             return;
@@ -49,7 +52,7 @@ public final class MidiPackMod implements ModInitializer {
             player.sendMessage(Text.literal("无效的播放请求。"), false);
             return;
         }
-        player.getServer().getCommandManager().executeWithPrefix(
+        server.getCommandManager().executeWithPrefix(
                 player.getCommandSource(), "function " + namespace + ":" + action);
     }
 
@@ -78,15 +81,39 @@ public final class MidiPackMod implements ModInitializer {
             return;
         }
 
+        final Path midiFile;
         try {
             Path worldRoot = server.getSavePath(WorldSavePath.ROOT).toAbsolutePath().normalize();
             Path importDir = worldRoot.resolve("midi_import").normalize();
             Files.createDirectories(importDir);
-            Path midiFile = importDir.resolve(safeName).normalize();
+            midiFile = importDir.resolve(safeName).normalize();
             if (!midiFile.startsWith(importDir)) throw new IllegalArgumentException("非法文件名");
             Files.write(midiFile, bytes);
+        } catch (Exception e) {
+            player.sendMessage(Text.literal("保存 MIDI 失败：" + safeMessage(e)), false);
+            return;
+        }
 
-            List<NoteEvent> events = MidiParser.parse(midiFile.toFile());
+        // Parse potentially complex MIDI files away from the server tick thread.
+        CompletableFuture.supplyAsync(() -> {
+            try {
+                return MidiParser.parse(midiFile.toFile());
+            } catch (Exception e) {
+                throw new CompletionException(e);
+            }
+        }).whenComplete((events, error) -> server.execute(() -> {
+            if (error != null) {
+                Throwable cause = error.getCause() == null ? error : error.getCause();
+                player.sendMessage(Text.literal("MIDI 解析失败：" + safeMessage(cause)), false);
+                return;
+            }
+            generateDatapacks(server, player, safeName, events);
+        }));
+    }
+
+    private static void generateDatapacks(MinecraftServer server, ServerPlayerEntity player,
+                                          String safeName, List<NoteEvent> events) {
+        try {
             String base = safeName.replaceFirst("(?i)\\.(mid|midi)$", "");
             BlockPos spawn = server.getOverworld().getSpawnPos().up(1);
             Path datapacks = server.getSavePath(WorldSavePath.DATAPACKS);
@@ -95,14 +122,16 @@ public final class MidiPackMod implements ModInitializer {
             String blockNs = DatapackGenerator.generate(datapacks, base, events,
                     DatapackGenerator.Backend.NOTE_BLOCK, spawn);
             server.getCommandManager().executeWithPrefix(server.getCommandSource(), "reload");
-
             player.sendMessage(Text.literal("已导入 " + events.size() + " 个音符事件。"), false);
             player.sendMessage(Text.literal("playsound：/function " + soundNs + ":play"), false);
             player.sendMessage(Text.literal("音符盒：/function " + blockNs + ":play"), false);
             player.sendMessage(Text.literal("使用音符盒前，请确认世界出生点附近有足够空地。"), false);
         } catch (Exception e) {
-            String message = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
-            player.sendMessage(Text.literal("MIDI 导入失败：" + message), false);
+            player.sendMessage(Text.literal("数据包生成失败：" + safeMessage(e)), false);
         }
+    }
+
+    private static String safeMessage(Throwable error) {
+        return error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
     }
 }

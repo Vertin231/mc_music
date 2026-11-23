@@ -29,7 +29,12 @@ public final class MidiPackClient implements ClientModInitializer {
         });
     }
 
+    /** May be called by the AWT file-picker thread; all Minecraft access is marshalled to the client thread. */
     public static void upload(String filename, byte[] data) {
+        MinecraftClient.getInstance().execute(() -> uploadOnClientThread(filename, data));
+    }
+
+    private static void uploadOnClientThread(String filename, byte[] data) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.getNetworkHandler() == null) {
             notifyUser("请先进入一个已启用 MIDI Pack 的世界或服务器。");
