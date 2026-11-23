@@ -10,17 +10,19 @@ import java.nio.file.Path;
 import java.util.*;
 
 /**
- * Generates datapacks. The note-block backend lays every MIDI note event out
- * chronologically in one straight +X lane per Track + Channel.
+ * Generates datapacks. The note-block backend is a physical repeater chain:
+ * one pulse enters each Track + Channel lane, repeaters encode elapsed time,
+ * and redstone dust branches power note blocks for simultaneous chords.
  *
- * A datapack scoreboard clock drives the lanes at 1 Minecraft game tick
- * resolution. Each note block is pulsed by its own adjacent redstone block.
+ * Repeater timing is quantized to even game ticks. Distinct event times are
+ * separated by at least 4 game ticks to keep pulses distinct.
  */
 public final class DatapackGenerator {
     public enum Backend { PLAYSOUND, NOTE_BLOCK }
 
     public static final int MAX_PARTS = 64;
     public static final int MAX_PHYSICAL_NOTES = 25_000;
+    public static final int MAX_PHYSICAL_REPEATERS = 50_000;
     private static final int DISPATCH_SEGMENT_TICKS = 256;
 
     private record Part(int track, int channel) implements Comparable<Part> {
@@ -30,8 +32,6 @@ public final class DatapackGenerator {
             return byTrack != 0 ? byTrack : Integer.compare(channel, other.channel);
         }
     }
-
-    private record PhysicalNote(NoteEvent event, BlockPos trigger) {}
 
     private DatapackGenerator() {}
 
@@ -134,70 +134,154 @@ public final class DatapackGenerator {
                 byPart.computeIfAbsent(part(note), ignored -> new ArrayList<>()).add(note);
             }
 
+            int laneSpacing = maxChordSize(events) + 2;
+            String inputPosition = (origin.getX() - 1) + " " + (origin.getY() + 1)
+                    + " " + origin.getZ();
             StringBuilder setup = new StringBuilder();
-            List<String> stopCleanup = new ArrayList<>();
             int lane = 0;
+
             for (Map.Entry<Part, List<NoteEvent>> entry : byPart.entrySet()) {
-                List<NoteEvent> laneEvents = entry.getValue();
-                laneEvents.sort(Comparator.comparingInt(NoteEvent::mcTick)
-                        .thenComparingInt(NoteEvent::midiNote)
-                        .thenComparingInt(NoteEvent::program)
-                        .thenComparingInt(NoteEvent::velocity));
+                NavigableMap<Integer, List<NoteEvent>> byTick = new TreeMap<>();
+                for (NoteEvent note : entry.getValue()) {
+                    byTick.computeIfAbsent(note.mcTick(), ignored -> new ArrayList<>()).add(note);
+                }
 
-                int z = origin.getZ() + lane * 3;
-                for (int station = 0; station < laneEvents.size(); station++) {
-                    NoteEvent note = laneEvents.get(station);
-                    int x = origin.getX() + station * 3;
-                    BlockPos support = new BlockPos(x, origin.getY(), z);
-                    BlockPos noteBlock = new BlockPos(x, origin.getY() + 1, z);
-                    BlockPos trigger = new BlockPos(x + 1, origin.getY() + 1, z);
+                int z = origin.getZ() + lane * laneSpacing;
+                int repeaterX = origin.getX();
+                Integer previousMidiTick = null;
 
-                    setup.append("setblock ").append(pos(support)).append(' ')
-                            .append(baseBlock(blockInstrument(note))).append(" keep\n");
-                    setup.append("setblock ").append(pos(noteBlock))
-                            .append(" minecraft:note_block[instrument=")
-                            .append(blockInstrument(note)).append(",note=")
-                            .append(foldNote(note.midiNote())).append(",powered=false] keep\n");
+                for (Map.Entry<Integer, List<NoteEvent>> eventEntry : byTick.entrySet()) {
+                    List<NoteEvent> chord = eventEntry.getValue();
+                    chord.sort(Comparator.comparingInt(NoteEvent::midiNote)
+                            .thenComparingInt(NoteEvent::program)
+                            .thenComparingInt(NoteEvent::velocity));
 
-                    PhysicalNote physical = new PhysicalNote(note, trigger);
-                    commands.computeIfAbsent(note.mcTick(), ignored -> new ArrayList<>()).add(
-                            "execute if score #active " + activeObjective + " matches 1 run setblock "
-                                    + pos(physical.trigger()) + " minecraft:redstone_block replace");
-                    commands.computeIfAbsent(note.mcTick() + 1, ignored -> new ArrayList<>()).add(
-                            "execute if block " + pos(physical.trigger())
-                                    + " minecraft:redstone_block run setblock "
-                                    + pos(physical.trigger()) + " minecraft:air replace");
-                    stopCleanup.add("execute if block " + pos(trigger)
-                            + " minecraft:redstone_block run setblock "
-                            + pos(trigger) + " minecraft:air replace");
+                    if (previousMidiTick == null) {
+                        appendRepeaterStage(setup, repeaterX, origin.getY(), z, 1, chord);
+                        repeaterX += 3;
+                    } else {
+                        int gap = quantizedGap(eventEntry.getKey() - previousMidiTick);
+                        List<Integer> delays = repeaterDelays(gap);
+                        for (int i = 0; i < delays.size(); i++) {
+                            List<NoteEvent> stageNotes = i == delays.size() - 1 ? chord : List.of();
+                            appendRepeaterStage(setup, repeaterX, origin.getY(), z,
+                                    delays.get(i), stageNotes);
+                            repeaterX += 3;
+                        }
+                    }
+                    previousMidiTick = eventEntry.getKey();
                 }
                 lane++;
             }
+
             write(functions.resolve("setup.mcfunction"), setup.toString());
-
-            List<String> stopLines = new ArrayList<>();
-            stopLines.add("scoreboard players set #active " + activeObjective + " 0");
-            stopLines.add("scoreboard players set #clock " + clockObjective + " 0");
-            stopLines.addAll(stopCleanup);
-            write(functions.resolve("stop.mcfunction"), String.join("\n", stopLines) + "\n");
-
+            write(functions.resolve("stop.mcfunction"),
+                    "scoreboard players set #active " + activeObjective + " 0\n"
+                            + "scoreboard players set #clock " + clockObjective + " 0\n"
+                            + "setblock " + inputPosition + " minecraft:air replace\n");
             write(functions.resolve("play.mcfunction"),
                     "scoreboard players set #active " + activeObjective + " 0\n"
                             + "scoreboard players set #clock " + clockObjective + " 0\n"
                             + "function " + namespace + ":setup\n"
+                            + "setblock " + inputPosition + " minecraft:redstone_block replace\n"
                             + "scoreboard players set #active " + activeObjective + " 1\n");
             write(functions.resolve("tick.mcfunction"),
-                    "execute if score #active " + activeObjective + " matches 1 run function "
-                            + namespace + ":dispatch\n"
-                            + "execute if score #active " + activeObjective + " matches 1 run scoreboard players add #clock "
+                    "execute if score #active " + activeObjective + " matches 1 run scoreboard players add #clock "
                             + clockObjective + " 1\n"
                             + "execute if score #active " + activeObjective + " matches 1 if score #clock "
-                            + clockObjective + " matches " + (maxTick + 2) + ".. run function "
-                            + namespace + ":stop\n");
-            writeDispatch(functions, namespace, commands, "#clock", clockObjective);
+                            + clockObjective + " matches 2.. run setblock " + inputPosition
+                            + " minecraft:air replace\n"
+                            + "execute if score #active " + activeObjective + " matches 1 if score #clock "
+                            + clockObjective + " matches 2.. run scoreboard players set #active "
+                            + activeObjective + " 0\n");
         }
 
         return namespace;
+    }
+
+    public static int maxChordSize(List<NoteEvent> events) {
+        Map<Part, Map<Integer, Integer>> counts = new HashMap<>();
+        int max = 1;
+        for (NoteEvent note : events) {
+            int count = counts.computeIfAbsent(part(note), ignored -> new HashMap<>())
+                    .merge(note.mcTick(), 1, Integer::sum);
+            max = Math.max(max, count);
+        }
+        return max;
+    }
+
+    public static int maxPhysicalRepeaterCount(List<NoteEvent> events) {
+        Map<Part, SortedSet<Integer>> ticks = new HashMap<>();
+        for (NoteEvent note : events) {
+            ticks.computeIfAbsent(part(note), ignored -> new TreeSet<>()).add(note.mcTick());
+        }
+        int maximum = 0;
+        for (SortedSet<Integer> laneTicks : ticks.values()) {
+            int count = 0;
+            Integer previous = null;
+            for (int tick : laneTicks) {
+                if (previous == null) count++;
+                else count += (quantizedGap(tick - previous) + 7) / 8;
+                previous = tick;
+            }
+            maximum = Math.max(maximum, count);
+        }
+        return maximum;
+    }
+
+    private static int quantizedGap(int midiGap) {
+        return Math.max(4, ((midiGap + 1) / 2) * 2);
+    }
+
+    private static List<Integer> repeaterDelays(int gameTicks) {
+        List<Integer> delays = new ArrayList<>();
+        int remaining = gameTicks;
+        while (remaining > 8) {
+            delays.add(4);
+            remaining -= 8;
+        }
+        delays.add(remaining / 2);
+        return delays;
+    }
+
+    private static void appendRepeaterStage(StringBuilder setup, int x, int y, int z,
+                                            int delay, List<NoteEvent> chord) {
+        setup.append("setblock ").append(x).append(' ').append(y).append(' ').append(z)
+                .append(" minecraft:stone keep\n");
+        setup.append("setblock ").append(x).append(' ').append(y + 1).append(' ').append(z)
+                .append(" minecraft:repeater[delay=").append(delay).append(",facing=east] keep\n");
+
+        String mainInstrumentBlock = chord.isEmpty() ? "minecraft:stone"
+                : baseBlock(blockInstrument(chord.get(0)));
+        setup.append("setblock ").append(x + 1).append(' ').append(y + 1).append(' ').append(z)
+                .append(' ').append(mainInstrumentBlock).append(" keep\n");
+
+        if (!chord.isEmpty()) {
+            appendNoteBlock(setup, x + 1, y + 2, z, chord.get(0));
+            for (int i = 1; i < chord.size(); i++) {
+                NoteEvent note = chord.get(i);
+                int branchZ = z + i;
+                setup.append("setblock ").append(x + 1).append(' ').append(y).append(' ').append(branchZ)
+                        .append(" minecraft:stone keep\n");
+                setup.append("setblock ").append(x + 1).append(' ').append(y + 1).append(' ').append(branchZ)
+                        .append(" minecraft:redstone_wire keep\n");
+                setup.append("setblock ").append(x + 2).append(' ').append(y + 1).append(' ').append(branchZ)
+                        .append(' ').append(baseBlock(blockInstrument(note))).append(" keep\n");
+                appendNoteBlock(setup, x + 2, y + 2, branchZ, note);
+            }
+        }
+
+        setup.append("setblock ").append(x + 2).append(' ').append(y).append(' ').append(z)
+                .append(" minecraft:stone keep\n");
+        setup.append("setblock ").append(x + 2).append(' ').append(y + 1).append(' ').append(z)
+                .append(" minecraft:redstone_wire keep\n");
+    }
+
+    private static void appendNoteBlock(StringBuilder setup, int x, int y, int z, NoteEvent note) {
+        setup.append("setblock ").append(x).append(' ').append(y).append(' ').append(z)
+                .append(" minecraft:note_block[instrument=").append(blockInstrument(note))
+                .append(",note=").append(foldNote(note.midiNote()))
+                .append(",powered=false] keep\n");
     }
 
     /**
