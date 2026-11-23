@@ -39,5 +39,6 @@ def test_score_matrix():
     mat=s.to_matrix()
     assert mat.instrument.tolist()==[0,2]
     starts, durs=mat.to_game_ticks(120)
-    assert starts.tolist()==[0,10]
+    # 2 quarter-note beats at 120 BPM = 1 second = 20 game ticks.
+    assert starts.tolist()==[0,20]
     assert durs.tolist()==[10,10]
