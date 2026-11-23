@@ -5,16 +5,19 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.networking.v1.ClientPlayNetworking;
+import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
-import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import org.lwjgl.glfw.GLFW;
+
+import java.util.Locale;
 
 public class MidiPackClient implements ClientModInitializer {
     private static KeyBinding openScreen;
+    public static volatile String lastNamespace = "midi_song";
 
     @Override
     public void onInitializeClient() {
@@ -27,10 +30,23 @@ public class MidiPackClient implements ClientModInitializer {
     }
 
     public static void upload(String filename, byte[] data) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.getNetworkHandler() == null) {
+            notifyUser("请先进入一个已启用 MIDI Pack 的世界或服务器。");
+            return;
+        }
         if (data.length > MidiPackMod.MAX_MIDI_BYTES) {
             notifyUser("文件超过 512 KiB，暂不支持。");
             return;
         }
+        String base = filename.replaceFirst("(?i)\\.(mid|midi)$", "");
+        String slug = base.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_]", "_")
+                .replaceAll("_+", "_");
+        if (slug.isBlank()) slug = "song";
+        if (!Character.isLetter(slug.charAt(0)) && slug.charAt(0) != '_') slug = "song_" + slug;
+        lastNamespace = "midi_" + slug;
+        if (lastNamespace.length() > 64) lastNamespace = lastNamespace.substring(0, 64);
+
         PacketByteBuf buf = PacketByteBufs.create();
         buf.writeString(filename);
         buf.writeByteArray(data);
@@ -39,6 +55,10 @@ public class MidiPackClient implements ClientModInitializer {
     }
 
     public static void action(String namespace, String action) {
+        if (MinecraftClient.getInstance().getNetworkHandler() == null) {
+            notifyUser("当前没有连接到游戏服务器。");
+            return;
+        }
         PacketByteBuf buf = PacketByteBufs.create();
         buf.writeString(namespace);
         buf.writeString(action);
@@ -46,8 +66,8 @@ public class MidiPackClient implements ClientModInitializer {
     }
 
     public static void notifyUser(String message) {
-        if (net.minecraft.client.MinecraftClient.getInstance().player != null) {
-            net.minecraft.client.MinecraftClient.getInstance().player.sendMessage(Text.literal(message), false);
+        if (MinecraftClient.getInstance().player != null) {
+            MinecraftClient.getInstance().player.sendMessage(Text.literal(message), false);
         }
     }
 }
