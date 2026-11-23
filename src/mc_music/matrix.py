@@ -7,7 +7,7 @@ import operator
 
 import numpy as np
 
-from .core import Instrument, Score
+from .core import Score
 from .ties import resolve_ties
 from .timing import PPQ_DEFAULT, fraction_to_ppq, ppq_to_game_ticks
 
@@ -23,7 +23,7 @@ def _integer(value, name):
 
 def _array(values, dtype, name):
     raw = np.asarray(values)
-    if raw.ndim != 1 or raw.dtype.kind not in "iu":
+    if raw.ndim != 1 or (raw.size and raw.dtype.kind not in "iu"):
         raise TypeError(f"{name} must be a one-dimensional integer array")
     info = np.iinfo(dtype)
     if raw.size and (np.any(raw < info.min) or np.any(raw > info.max)):
@@ -54,8 +54,7 @@ class NoteMatrix:
             "velocity": _array(self.velocity, np.int8, "velocity"),
             "instrument": _array(self.instrument, np.int8, "instrument"),
         }
-        lengths = {len(a) for a in arrays.values()}
-        if len(lengths) != 1:
+        if len({len(a) for a in arrays.values()}) != 1:
             raise ValueError("all note arrays must have equal lengths")
         if np.any(arrays["start"] < 0) or np.any(arrays["duration"] <= 0):
             raise ValueError("start must be non-negative and duration positive")
@@ -99,7 +98,6 @@ class NoteMatrix:
             onset = int(onset)
             target = ((2 * onset + grid) // (2 * grid)) * grid
             delta = Fraction((target - onset) * strength.numerator, strength.denominator)
-            # The matrix onset remains integer PPQ; use half-up for the adjustment.
             adjustment = (2 * delta.numerator + delta.denominator) // (2 * delta.denominator)
             moved.append(max(0, onset + adjustment))
         return self._replace(start=np.asarray(moved, dtype=np.int64))
