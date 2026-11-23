@@ -3,7 +3,7 @@
   "id": "midipack",
   "version": "${version}",
   "name": "MIDI Pack",
-  "description": "Import MIDI files and generate Minecraft datapacks with playsound or note-block playback.",
+  "description": "Import MIDI files and generate Minecraft datapacks with playsound, note-block, or experimental local SoundFont playback.",
   "authors": ["mc_music contributors"],
   "environment": "*",
   "entrypoints": {
