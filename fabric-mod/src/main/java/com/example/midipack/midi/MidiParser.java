@@ -6,7 +6,7 @@ import java.util.*;
 
 /** Parses SMF 0/1, retaining source Track and converting PPQ time to 50 ms game ticks. */
 public final class MidiParser {
-    private static final int MAX_NOTE_EVENTS = 100_000;
+    private static final int MAX_NOTE_EVENTS = 25_000;
     private static final int MAX_GAME_TICK = 2_000_000;
     private MidiParser() {}
     private record Raw(long tick, int track, int index, MidiMessage message) {}
@@ -56,7 +56,7 @@ public final class MidiParser {
                     notes.add(new NoteEvent((int) tick, e.track(), ch, programs[ch],
                             sm.getData1(), sm.getData2()));
                     if (notes.size() > MAX_NOTE_EVENTS)
-                        throw new IllegalArgumentException("音符事件过多，最多支持 " + MAX_NOTE_EVENTS + " 个。");
+                        throw new IllegalArgumentException("音符事件过多；线性音符盒轨道最多支持 " + MAX_NOTE_EVENTS + " 个事件。");
                 }
             }
         }
