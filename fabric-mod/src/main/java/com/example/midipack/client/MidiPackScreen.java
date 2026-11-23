@@ -92,7 +92,7 @@ public final class MidiPackScreen extends Screen {
         renderBackground(context, mouseX, mouseY, delta);
         context.drawCenteredTextWithShadow(textRenderer, title, width / 2, height / 2 - 133, 0xFFFFFF);
         context.drawCenteredTextWithShadow(textRenderer, Text.literal("Note-block layout origin (support block)"),
-                width / 2, height / 2 - 101, 0xBFC8D2);
+                width / 2, height / 2 - 117, 0xBFC8D2);
         context.drawCenteredTextWithShadow(textRenderer, Text.literal("X"),
                 width / 2 - 75, height / 2 - 99, 0xFFFFFF);
         context.drawCenteredTextWithShadow(textRenderer, Text.literal("Y"),
