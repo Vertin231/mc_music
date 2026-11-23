@@ -33,7 +33,7 @@ public final class MidiPackScreen extends Screen {
             if (client != null && client.player != null) setCoordinates(client.player.getBlockPos().down());
         }).dimensions(center - 108, top + 53, 216, 20).build());
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Import MIDI (system picker)"), button -> {
+        addDrawableChild(ButtonWidget.builder(Text.literal("Import MIDI (in-game browser)"), button -> {
             BlockPos origin = readCoordinates();
             if (origin != null) MidiFilePicker.open(origin);
         }).dimensions(center - 108, top + 79, 216, 20).build());
