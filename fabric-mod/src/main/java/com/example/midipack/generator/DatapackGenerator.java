@@ -113,14 +113,19 @@ public final class DatapackGenerator {
                         + "scoreboard players set #active " + activeObjective + " 0\n");
 
         NavigableMap<Integer, List<String>> commands = new TreeMap<>();
-        int maxTick = events.stream().mapToInt(NoteEvent::mcTick).max().orElse(0);
+        int maxTick = events.stream().mapToInt(n -> n.mcTick() + n.durationTicks()).max().orElse(0);
 
         if (backend == Backend.PLAYSOUND) {
+            // Approximate sustain by retriggering every 4 game ticks (200 ms).
+            // This is tremolo-like, not true MIDI note-off control.
             for (NoteEvent note : events) {
-                commands.computeIfAbsent(note.mcTick(), ignored -> new ArrayList<>()).add(
-                        String.format(Locale.ROOT, "playsound %s record @s ~ ~ ~ %.3f %.5f",
-                                soundFor(note), Math.max(0.05, note.velocity() / 127.0),
-                                soundPitch(note.midiNote())));
+                int end = note.mcTick() + Math.max(1, note.durationTicks());
+                for (int t = note.mcTick(); t < end; t += 4) {
+                    commands.computeIfAbsent(t, ignored -> new ArrayList<>()).add(
+                            String.format(Locale.ROOT, "playsound %s record @s ~ ~ ~ %.3f %.5f",
+                                    soundFor(note), Math.max(0.05, note.velocity() / 127.0),
+                                    soundPitch(note.midiNote())));
+                }
             }
             write(functions.resolve("play.mcfunction"),
                     "scoreboard players set @s " + clockObjective + " 0\n"
