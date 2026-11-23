@@ -1,6 +1,5 @@
 """Validated, read-only NumPy note-event matrix for batch musical operations."""
 from dataclasses import dataclass
-from collections import defaultdict
 from fractions import Fraction
 import operator
 import numpy as np
@@ -116,10 +115,16 @@ class NoteMatrix:
 
     def chord_groups(self):
         """Return indices grouped by equal onset (simultaneous attacks)."""
-        groups = defaultdict(list)
-        for i, onset in enumerate(self.start.tolist()):
-            groups[int(onset)].append(i)
-        return {time: tuple(indices) for time, indices in sorted(groups.items())}
+        if len(self) == 0:
+            return {}
+        order = np.argsort(self.start, kind="stable")
+        sorted_start = self.start[order]
+        unique, first = np.unique(sorted_start, return_index=True)
+        groups = np.split(order, first[1:])
+        return {
+            int(onset): tuple(int(i) for i in indices)
+            for onset, indices in zip(unique, groups)
+        }
 
     def to_game_ticks(self, bpm, ticks_per_second: int = 20):
         """Convert PPQ onset/duration to Minecraft ticks (rounded)."""
