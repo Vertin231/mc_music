@@ -146,7 +146,7 @@ public final class DatapackGenerator {
         return namespace;
     }
 
-    private static String objective(String ns) { return "mt_" + Integer.toHexString(ns.hashCode()).replace('-', '0').substring(0, 6); }
+    private static String objective(String ns) { return "mt_" + String.format(Locale.ROOT, "%08x", ns.hashCode()); }
     private static String playing(String ns) { return objective(ns) + "p"; }
     private static String pos(BlockPos p) { return p.getX() + " " + p.getY() + " " + p.getZ(); }
     private static void write(Path path, String text) throws IOException {
