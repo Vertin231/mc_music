@@ -198,10 +198,10 @@ public final class DatapackGenerator {
                     "execute if score #active " + activeObjective + " matches 1 run scoreboard players add #clock "
                             + clockObjective + " 1\n"
                             + "execute if score #active " + activeObjective + " matches 1 if score #clock "
-                            + clockObjective + " matches 2.. run setblock " + inputPosition
+                            + clockObjective + " matches 4.. run setblock " + inputPosition
                             + " minecraft:air replace\n"
                             + "execute if score #active " + activeObjective + " matches 1 if score #clock "
-                            + clockObjective + " matches 2.. run scoreboard players set #active "
+                            + clockObjective + " matches 4.. run scoreboard players set #active "
                             + activeObjective + " 0\n");
         }
 
