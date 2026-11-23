@@ -2,45 +2,87 @@ package com.example.midipack.generator;
 
 import com.example.midipack.midi.NoteEvent;
 import net.minecraft.util.math.BlockPos;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
-import java.util.stream.Collectors;
 
-/** Generates datapacks; physical note-block output has one parallel X-axis lane per Track + Channel. */
+/**
+ * Generates datapacks. The note-block backend lays every MIDI note event out
+ * chronologically in one straight +X lane per Track + Channel.
+ *
+ * A datapack scoreboard clock drives the lanes at 1 Minecraft game tick
+ * resolution. Each note block is pulsed by its own adjacent redstone block.
+ */
 public final class DatapackGenerator {
     public enum Backend { PLAYSOUND, NOTE_BLOCK }
-    public static final int MAX_PARTS = 64, MAX_STATIONS_PER_PART = 256;
+
+    public static final int MAX_PARTS = 64;
+    public static final int MAX_PHYSICAL_NOTES = 25_000;
+    private static final int DISPATCH_SEGMENT_TICKS = 1_000;
+
     private record Part(int track, int channel) implements Comparable<Part> {
-        public int compareTo(Part p) {
-            int c = Integer.compare(track, p.track);
-            return c != 0 ? c : Integer.compare(channel, p.channel);
+        @Override
+        public int compareTo(Part other) {
+            int byTrack = Integer.compare(track, other.track);
+            return byTrack != 0 ? byTrack : Integer.compare(channel, other.channel);
         }
     }
+
+    private record PhysicalNote(NoteEvent event, BlockPos trigger) {}
+
     private DatapackGenerator() {}
-    private static Part part(NoteEvent n) { return new Part(n.track(), n.channel()); }
+
+    private static Part part(NoteEvent note) {
+        return new Part(note.track(), note.channel());
+    }
+
     public static int countParts(List<NoteEvent> events) {
         return (int) events.stream().map(DatapackGenerator::part).distinct().count();
+    }
+
+    public static int maxPartSize(List<NoteEvent> events) {
+        Map<Part, Integer> counts = new HashMap<>();
+        int max = 0;
+        for (NoteEvent note : events) {
+            int count = counts.merge(part(note), 1, Integer::sum);
+            max = Math.max(max, count);
+        }
+        return max;
     }
 
     public static String generate(Path datapacksDir, String sourceName, List<NoteEvent> events,
                                   Backend backend, BlockPos origin) throws IOException {
         if (events.isEmpty()) throw new IllegalArgumentException("Cannot generate an empty datapack.");
+        if (countParts(events) > MAX_PARTS) {
+            throw new IllegalArgumentException("声部数量超过限制：最多支持 " + MAX_PARTS + " 条并行轨道。");
+        }
+        if (backend == Backend.NOTE_BLOCK && events.size() > MAX_PHYSICAL_NOTES) {
+            throw new IllegalArgumentException("音符盒轨道最多支持 " + MAX_PHYSICAL_NOTES
+                    + " 个音符事件；当前文件包含 " + events.size() + " 个。");
+        }
+
         String slug = sourceName.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_]", "_")
                 .replaceAll("_+", "_");
         if (slug.isBlank()) slug = "song";
         if (!Character.isLetter(slug.charAt(0)) && slug.charAt(0) != '_') slug = "song_" + slug;
         if (slug.length() > 52) slug = slug.substring(0, 52);
         String suffix = backend == Backend.PLAYSOUND ? "_sound" : "_blocks";
-        String ns = "midi_" + slug + suffix;
-        if (ns.length() > 64) ns = ns.substring(0, 64);
-        Path root = datapacksDir.resolve(ns).normalize();
-        if (!root.startsWith(datapacksDir.normalize())) throw new IllegalArgumentException("Invalid datapack path.");
-        Path functions = root.resolve("data").resolve(ns).resolve("functions");
+        String namespace = "midi_" + slug + suffix;
+        if (namespace.length() > 64) namespace = namespace.substring(0, 64);
+
+        Path root = datapacksDir.resolve(namespace).normalize();
+        if (!root.startsWith(datapacksDir.normalize())) {
+            throw new IllegalArgumentException("Invalid datapack path.");
+        }
+        Path functions = root.resolve("data").resolve(namespace).resolve("functions");
         Path notesDir = functions.resolve("notes");
         Files.createDirectories(notesDir);
+        Files.createDirectories(functions.resolve("dispatch"));
         Files.createDirectories(root.resolve("data/minecraft/tags/functions"));
+
         write(root.resolve("pack.mcmeta"), """
                 {
                   "pack": {
@@ -49,160 +91,208 @@ public final class DatapackGenerator {
                   }
                 }
                 """);
-        write(root.resolve("data/minecraft/tags/functions/load.json"), "{\"values\":[\"" + ns + ":load\"]}");
-        write(root.resolve("data/minecraft/tags/functions/tick.json"), "{\"values\":[\"" + ns + ":tick\"]}");
+        write(root.resolve("data/minecraft/tags/functions/load.json"),
+                "{\"values\":[\"" + namespace + ":load\"]}");
+        write(root.resolve("data/minecraft/tags/functions/tick.json"),
+                "{\"values\":[\"" + namespace + ":tick\"]}");
 
-        String objective = objective(ns), playing = playing(ns);
-        write(functions.resolve("load.mcfunction"), "scoreboard objectives add " + objective + " dummy\n"
-                + "scoreboard objectives add " + playing + " dummy\n");
-        write(functions.resolve("pause.mcfunction"), "scoreboard players set @s " + playing + " 0\nstopsound @s record\n");
-        write(functions.resolve("resume.mcfunction"), "scoreboard players set @s " + playing + " 1\n");
-        write(functions.resolve("stop.mcfunction"), "scoreboard players set @s " + playing + " 0\n"
-                + "scoreboard players set @s " + objective + " 0\nstopsound @s record\n");
-        write(functions.resolve("play.mcfunction"), (backend == Backend.NOTE_BLOCK ? "function " + ns + ":setup\n" : "")
-                + "scoreboard players set @s " + objective + " 0\nscoreboard players set @s " + playing + " 1\n");
+        String clockObjective = objective(namespace);
+        String activeObjective = playing(namespace);
+        write(functions.resolve("load.mcfunction"),
+                "scoreboard objectives add " + clockObjective + " dummy\n"
+                        + "scoreboard objectives add " + activeObjective + " dummy\n"
+                        + "scoreboard players set #active " + activeObjective + " 0\n");
 
-        Map<Integer,List<NoteEvent>> grouped = events.stream().collect(Collectors.groupingBy(
-                NoteEvent::mcTick, TreeMap::new, Collectors.toList()));
-        int maxTick = grouped.keySet().stream().mapToInt(Integer::intValue).max().orElse(0);
-        Map<Integer,List<String>> commands = new TreeMap<>();
+        Map<Integer, List<String>> commands = new TreeMap<>();
+        int maxTick = events.stream().mapToInt(NoteEvent::mcTick).max().orElse(0);
 
         if (backend == Backend.PLAYSOUND) {
-            for (var e : grouped.entrySet()) {
-                List<String> lines = new ArrayList<>();
-                for (NoteEvent n : e.getValue())
-                    lines.add(String.format(Locale.ROOT, "playsound %s record @s ~ ~ ~ %.3f %.5f",
-                            soundFor(n), Math.max(0.05, n.velocity()/127.0), soundPitch(n.midiNote())));
-                commands.put(e.getKey(), lines);
+            for (NoteEvent note : events) {
+                commands.computeIfAbsent(note.mcTick(), ignored -> new ArrayList<>()).add(
+                        String.format(Locale.ROOT, "playsound %s record @s ~ ~ ~ %.3f %.5f",
+                                soundFor(note), Math.max(0.05, note.velocity() / 127.0),
+                                soundPitch(note.midiNote())));
             }
+            write(functions.resolve("play.mcfunction"),
+                    "scoreboard players set @s " + clockObjective + " 0\n"
+                            + "scoreboard players set @s " + activeObjective + " 1\n");
+            write(functions.resolve("stop.mcfunction"),
+                    "scoreboard players set @s " + activeObjective + " 0\n"
+                            + "scoreboard players set @s " + clockObjective + " 0\n"
+                            + "stopsound @s record\n");
+            write(functions.resolve("tick.mcfunction"),
+                    "execute as @a[scores={" + activeObjective + "=1}] at @s run function "
+                            + namespace + ":dispatch\n"
+                            + "execute as @a[scores={" + activeObjective + "=1}] run scoreboard players add @s "
+                            + clockObjective + " 1\n"
+                            + "execute as @a[scores={" + activeObjective + "=1," + clockObjective + "="
+                            + (maxTick + 2) + "..}] run function " + namespace + ":stop\n");
+            writeDispatch(functions, namespace, commands, "@s", clockObjective);
         } else {
-            SortedSet<Part> parts = new TreeSet<>();
-            for (NoteEvent n : events) parts.add(part(n));
-            if (parts.size() > MAX_PARTS)
-                throw new IllegalArgumentException("声部数量超过限制：最多支持 " + MAX_PARTS + " 条并行轨道。");
-
-            Map<Part,LinkedHashMap<String,Integer>> stations = new LinkedHashMap<>();
-            for (Part p : parts) stations.put(p, new LinkedHashMap<>());
-            for (NoteEvent n : events) {
-                var row = stations.get(part(n));
-                row.computeIfAbsent(stationKey(n), k -> row.size());
+            SortedMap<Part, List<NoteEvent>> byPart = new TreeMap<>();
+            for (NoteEvent note : events) {
+                byPart.computeIfAbsent(part(note), ignored -> new ArrayList<>()).add(note);
             }
-            for (var e : stations.entrySet())
-                if (e.getValue().size() > MAX_STATIONS_PER_PART)
-                    throw new IllegalArgumentException("Track " + e.getKey().track() + " / Channel "
-                            + (e.getKey().channel()+1) + " 的音色/音高组合超过 " + MAX_STATIONS_PER_PART + " 种。");
 
-            List<String> setup = new ArrayList<>();
-            Map<Part,Map<String,BlockPos>> triggers = new LinkedHashMap<>();
-            List<BlockPos> allTriggers = new ArrayList<>();
+            StringBuilder setup = new StringBuilder();
+            List<String> stopCleanup = new ArrayList<>();
             int lane = 0;
-            for (var row : stations.entrySet()) {
-                Part p = row.getKey();
+            for (Map.Entry<Part, List<NoteEvent>> entry : byPart.entrySet()) {
+                List<NoteEvent> laneEvents = entry.getValue();
+                laneEvents.sort(Comparator.comparingInt(NoteEvent::mcTick)
+                        .thenComparingInt(NoteEvent::midiNote)
+                        .thenComparingInt(NoteEvent::program)
+                        .thenComparingInt(NoteEvent::velocity));
+
                 int z = origin.getZ() + lane * 3;
-                Map<String,BlockPos> laneTriggers = new LinkedHashMap<>();
-                for (var s : row.getValue().entrySet()) {
-                    String[] bits = s.getKey().split(":");
-                    String instrument = bits[0];
-                    int note = Integer.parseInt(bits[1]);
-                    int x = origin.getX() + s.getValue() * 3;
+                for (int station = 0; station < laneEvents.size(); station++) {
+                    NoteEvent note = laneEvents.get(station);
+                    int x = origin.getX() + station * 3;
                     BlockPos support = new BlockPos(x, origin.getY(), z);
-                    BlockPos noteBlock = new BlockPos(x, origin.getY()+1, z);
-                    BlockPos trigger = new BlockPos(x+1, origin.getY()+1, z);
-                    setup.add("setblock " + pos(support) + " " + baseBlock(instrument) + " keep");
-                    setup.add("setblock " + pos(noteBlock) + " minecraft:note_block[instrument="
-                            + instrument + ",note=" + note + ",powered=false] keep");
-                    laneTriggers.put(s.getKey(), trigger);
-                    allTriggers.add(trigger);
+                    BlockPos noteBlock = new BlockPos(x, origin.getY() + 1, z);
+                    BlockPos trigger = new BlockPos(x + 1, origin.getY() + 1, z);
+
+                    setup.append("setblock ").append(pos(support)).append(' ')
+                            .append(baseBlock(blockInstrument(note))).append(" keep\n");
+                    setup.append("setblock ").append(pos(noteBlock))
+                            .append(" minecraft:note_block[instrument=")
+                            .append(blockInstrument(note)).append(",note=")
+                            .append(foldNote(note.midiNote())).append(",powered=false] keep\n");
+
+                    PhysicalNote physical = new PhysicalNote(note, trigger);
+                    commands.computeIfAbsent(note.mcTick(), ignored -> new ArrayList<>()).add(
+                            "execute if score #active " + activeObjective + " matches 1 run setblock "
+                                    + pos(physical.trigger()) + " minecraft:redstone_block replace");
+                    commands.computeIfAbsent(note.mcTick() + 1, ignored -> new ArrayList<>()).add(
+                            "execute if block " + pos(physical.trigger())
+                                    + " minecraft:redstone_block run setblock "
+                                    + pos(physical.trigger()) + " minecraft:air replace");
+                    stopCleanup.add("execute if block " + pos(trigger)
+                            + " minecraft:redstone_block run setblock "
+                            + pos(trigger) + " minecraft:air replace");
                 }
-                triggers.put(p, laneTriggers);
                 lane++;
             }
-            write(functions.resolve("setup.mcfunction"), String.join("\n", setup) + "\n");
+            write(functions.resolve("setup.mcfunction"), setup.toString());
 
-            List<String> stop = new ArrayList<>();
-            stop.add("scoreboard players set @s " + playing + " 0");
-            stop.add("scoreboard players set @s " + objective + " 0");
-            stop.add("stopsound @s record");
-            for (BlockPos t : allTriggers)
-                stop.add("execute if block " + pos(t) + " minecraft:redstone_block run setblock "
-                        + pos(t) + " minecraft:air replace");
-            write(functions.resolve("stop.mcfunction"), String.join("\n", stop) + "\n");
+            List<String> stopLines = new ArrayList<>();
+            stopLines.add("scoreboard players set #active " + activeObjective + " 0");
+            stopLines.add("scoreboard players set #clock " + clockObjective + " 0");
+            stopLines.addAll(stopCleanup);
+            write(functions.resolve("stop.mcfunction"), String.join("\n", stopLines) + "\n");
 
-            for (var e : grouped.entrySet()) {
-                int tick = e.getKey();
-                List<String> lines = commands.computeIfAbsent(tick, k -> new ArrayList<>());
-                Set<String> fired = new HashSet<>();
-                for (NoteEvent n : e.getValue()) {
-                    Part p = part(n);
-                    String key = stationKey(n);
-                    if (!fired.add(p.track() + ":" + p.channel() + ":" + key)) continue;
-                    BlockPos t = triggers.get(p).get(key);
-                    lines.add("execute if block " + pos(t) + " minecraft:air run setblock "
-                            + pos(t) + " minecraft:redstone_block replace");
-                    commands.computeIfAbsent(tick+1, k -> new ArrayList<>()).add(0,
-                            "execute if block " + pos(t) + " minecraft:redstone_block run setblock "
-                                    + pos(t) + " minecraft:air replace");
-                }
-            }
+            write(functions.resolve("play.mcfunction"),
+                    "scoreboard players set #active " + activeObjective + " 0\n"
+                            + "scoreboard players set #clock " + clockObjective + " 0\n"
+                            + "function " + namespace + ":setup\n"
+                            + "scoreboard players set #active " + activeObjective + " 1\n");
+            write(functions.resolve("tick.mcfunction"),
+                    "execute if score #active " + activeObjective + " matches 1 run function "
+                            + namespace + ":dispatch\n"
+                            + "execute if score #active " + activeObjective + " matches 1 run scoreboard players add #clock "
+                            + clockObjective + " 1\n"
+                            + "execute if score #active " + activeObjective + " matches 1 if score #clock "
+                            + clockObjective + " matches " + (maxTick + 2) + ".. run function "
+                            + namespace + ":stop\n");
+            writeDispatch(functions, namespace, commands, "#clock", clockObjective);
         }
 
-        for (var e : commands.entrySet())
-            write(notesDir.resolve("t_" + e.getKey() + ".mcfunction"), String.join("\n", e.getValue()) + "\n");
-        List<String> dispatch = new ArrayList<>();
-        for (int tick : commands.keySet())
-            dispatch.add("execute if score @s " + objective + " matches " + tick
-                    + " run function " + ns + ":notes/t_" + tick);
-        write(functions.resolve("dispatch.mcfunction"), String.join("\n", dispatch) + "\n");
-        write(functions.resolve("tick.mcfunction"), "execute as @a[scores={" + playing
-                + "=1}] at @s run function " + ns + ":dispatch\n"
-                + "execute as @a[scores={" + playing + "=1}] run scoreboard players add @s "
-                + objective + " 1\n"
-                + "execute as @a[scores={" + playing + "=1," + objective + "="
-                + (maxTick+2) + "..}] run function " + ns + ":stop\n");
-        return ns;
+        return namespace;
     }
 
-    private static String stationKey(NoteEvent n) { return blockInstrument(n) + ":" + foldNote(n.midiNote()); }
-    private static String objective(String ns) { return "mt_" + String.format(Locale.ROOT,"%08x",ns.hashCode()); }
-    private static String playing(String ns) { return objective(ns) + "p"; }
-    private static String pos(BlockPos p) { return p.getX()+" "+p.getY()+" "+p.getZ(); }
-    private static void write(Path p,String s) throws IOException {
-        Files.createDirectories(p.getParent()); Files.writeString(p,s,StandardCharsets.UTF_8);
+    /**
+     * Keep the root dispatcher small. Each child checks at most 1,000 adjacent
+     * game-tick values, avoiding a single enormous function for long MIDI files.
+     */
+    private static void writeDispatch(Path functions, String namespace,
+                                      NavigableMap<Integer, List<String>> commands,
+                                      String scoreHolder, String objective) throws IOException {
+        if (commands.isEmpty()) {
+            write(functions.resolve("dispatch.mcfunction"), "");
+            return;
+        }
+        int lastTick = commands.lastKey();
+        List<String> root = new ArrayList<>();
+        for (int start = 0; start <= lastTick; start += DISPATCH_SEGMENT_TICKS) {
+            int end = Math.min(start + DISPATCH_SEGMENT_TICKS - 1, lastTick);
+            NavigableMap<Integer, List<String>> slice = commands.subMap(start, true, end, true);
+            if (slice.isEmpty()) continue;
+
+            int segment = start / DISPATCH_SEGMENT_TICKS;
+            List<String> lines = new ArrayList<>();
+            for (int tick : slice.keySet()) {
+                lines.add("execute if score " + scoreHolder + " " + objective + " matches "
+                        + tick + " run function " + namespace + ":notes/t_" + tick);
+            }
+            write(functions.resolve("dispatch/s_" + segment + ".mcfunction"),
+                    String.join("\n", lines) + "\n");
+            root.add("execute if score " + scoreHolder + " " + objective + " matches "
+                    + start + ".." + end + " run function " + namespace + ":dispatch/s_" + segment);
+        }
+        write(functions.resolve("dispatch.mcfunction"), String.join("\n", root) + "\n");
+
+        for (Map.Entry<Integer, List<String>> entry : commands.entrySet()) {
+            write(functions.resolve("notes/t_" + entry.getKey() + ".mcfunction"),
+                    String.join("\n", entry.getValue()) + "\n");
+        }
     }
-    private static String soundFor(NoteEvent n) {
-        if (n.channel()==9) {
-            int p=n.midiNote();
-            if (p==35||p==36) return "minecraft:block.note_block.basedrum";
-            if (p==38||p==40||p==37) return "minecraft:block.note_block.snare";
+
+    private static String objective(String namespace) {
+        return "mt_" + String.format(Locale.ROOT, "%08x", namespace.hashCode());
+    }
+
+    private static String playing(String namespace) {
+        return objective(namespace) + "p";
+    }
+
+    private static String pos(BlockPos pos) {
+        return pos.getX() + " " + pos.getY() + " " + pos.getZ();
+    }
+
+    private static void write(Path path, String content) throws IOException {
+        Files.createDirectories(path.getParent());
+        Files.writeString(path, content, StandardCharsets.UTF_8);
+    }
+
+    private static String soundFor(NoteEvent note) {
+        if (note.channel() == 9) {
+            int pitch = note.midiNote();
+            if (pitch == 35 || pitch == 36) return "minecraft:block.note_block.basedrum";
+            if (pitch == 38 || pitch == 40 || pitch == 37) return "minecraft:block.note_block.snare";
             return "minecraft:block.note_block.hat";
         }
-        int p=n.program();
-        if(p>=32&&p<=39)return "minecraft:block.note_block.bass";
-        if(p>=24&&p<=31)return "minecraft:block.note_block.guitar";
-        if(p>=72&&p<=79)return "minecraft:block.note_block.flute";
-        if(p>=8&&p<=15)return "minecraft:block.note_block.bell";
+        int program = note.program();
+        if (program >= 32 && program <= 39) return "minecraft:block.note_block.bass";
+        if (program >= 24 && program <= 31) return "minecraft:block.note_block.guitar";
+        if (program >= 72 && program <= 79) return "minecraft:block.note_block.flute";
+        if (program >= 8 && program <= 15) return "minecraft:block.note_block.bell";
         return "minecraft:block.note_block.harp";
     }
+
     private static double soundPitch(int midi) {
-        int p=midi; while(p<54)p+=12; while(p>78)p-=12;
-        return Math.pow(2.0,(p-66)/12.0);
+        int pitch = midi;
+        while (pitch < 54) pitch += 12;
+        while (pitch > 78) pitch -= 12;
+        return Math.pow(2.0, (pitch - 66) / 12.0);
     }
-    private static String blockInstrument(NoteEvent n) {
-        if(n.channel()==9) {
-            int p=n.midiNote();
-            if(p==35||p==36)return "basedrum";
-            if(p==38||p==40||p==37)return "snare";
+
+    private static String blockInstrument(NoteEvent note) {
+        if (note.channel() == 9) {
+            int pitch = note.midiNote();
+            if (pitch == 35 || pitch == 36) return "basedrum";
+            if (pitch == 38 || pitch == 40 || pitch == 37) return "snare";
             return "hat";
         }
-        int p=n.program();
-        if(p>=32&&p<=39)return "bass";
-        if(p>=24&&p<=31)return "guitar";
-        if(p>=72&&p<=79)return "flute";
-        if(p>=8&&p<=15)return "bell";
+        int program = note.program();
+        if (program >= 32 && program <= 39) return "bass";
+        if (program >= 24 && program <= 31) return "guitar";
+        if (program >= 72 && program <= 79) return "flute";
+        if (program >= 8 && program <= 15) return "bell";
         return "harp";
     }
-    private static String baseBlock(String i) {
-        return switch(i) {
+
+    private static String baseBlock(String instrument) {
+        return switch (instrument) {
             case "bass" -> "minecraft:oak_planks";
             case "guitar" -> "minecraft:white_wool";
             case "flute" -> "minecraft:clay";
@@ -213,7 +303,11 @@ public final class DatapackGenerator {
             default -> "minecraft:dirt";
         };
     }
+
     private static int foldNote(int midi) {
-        int p=midi; while(p<54)p+=12; while(p>78)p-=12; return p-54;
+        int pitch = midi;
+        while (pitch < 54) pitch += 12;
+        while (pitch > 78) pitch -= 12;
+        return pitch - 54;
     }
 }
