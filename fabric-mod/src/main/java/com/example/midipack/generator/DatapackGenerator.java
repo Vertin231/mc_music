@@ -103,7 +103,7 @@ public final class DatapackGenerator {
                         + "scoreboard objectives add " + activeObjective + " dummy\n"
                         + "scoreboard players set #active " + activeObjective + " 0\n");
 
-        Map<Integer, List<String>> commands = new TreeMap<>();
+        NavigableMap<Integer, List<String>> commands = new TreeMap<>();
         int maxTick = events.stream().mapToInt(NoteEvent::mcTick).max().orElse(0);
 
         if (backend == Backend.PLAYSOUND) {
