@@ -6,7 +6,7 @@ MIDI Pack is a client GUI and server-side MIDI-to-datapack importer for Minecraf
 
 - Press **M** to open the in-game MIDI Pack screen.
 - Enter a custom X/Y/Z placement origin, or use the current player block position.
-- Import a .mid / .midi file through the operating system's native file dialog.
+- Browse and import .mid / .midi files using the in-game file browser (no AWT desktop dialog required). The default folder is `<game directory>/music`; you can navigate folders or paste an absolute file/folder path.
 - Transfer the selected file and placement coordinates to the integrated or dedicated server using a Fabric custom payload.
 - Parse Standard MIDI Format 0/1 with Java's built-in javax.sound.midi, including PPQ tempo changes and GM program changes.
 - Retain source Track and MIDI Channel. Physical parts are split by **Track + Channel**:
@@ -53,7 +53,7 @@ The mod jar is written to build/libs/.
 2. Copy the mod jar into the game's mods directory.
 3. Start a world or join a server with this mod installed on the server. The importing player must have operator permission level 2.
 4. Press M. Set X/Y/Z to the support-block coordinate of the first lane's first station, or click **Use my current position**.
-5. Click Import MIDI and select a file (maximum 512 KiB).
+5. Click Import MIDI and browse to a file and import it (maximum 512 KiB). The default folder is `<game directory>/music`; the path field also accepts an absolute path.
 6. After the server confirms import, choose **Play · playsound** or **Play · note blocks**. Use **Stop both** to stop playback and clear redstone pulse blocks.
 
 ## Safety and limitations
