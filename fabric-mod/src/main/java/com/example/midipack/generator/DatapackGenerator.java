@@ -21,7 +21,6 @@ public final class DatapackGenerator {
 
     public static final int MAX_PARTS = 64;
     public static final int MAX_PHYSICAL_NOTES = 25_000;
-    private static final int DISPATCH_SEGMENT_TICKS = 1_000;
 
     private record Part(int track, int channel) implements Comparable<Part> {
         @Override
@@ -201,8 +200,8 @@ public final class DatapackGenerator {
     }
 
     /**
-     * Keep the root dispatcher small. Each child checks at most 1,000 adjacent
-     * game-tick values, avoiding a single enormous function for long MIDI files.
+     * Build a balanced scoreboard decision tree. This keeps dispatch cost
+     * logarithmic in the number of distinct event ticks, even for long songs.
      */
     private static void writeDispatch(Path functions, String namespace,
                                       NavigableMap<Integer, List<String>> commands,
@@ -211,30 +210,58 @@ public final class DatapackGenerator {
             write(functions.resolve("dispatch.mcfunction"), "");
             return;
         }
-        int lastTick = commands.lastKey();
-        List<String> root = new ArrayList<>();
-        for (int start = 0; start <= lastTick; start += DISPATCH_SEGMENT_TICKS) {
-            int end = Math.min(start + DISPATCH_SEGMENT_TICKS - 1, lastTick);
-            NavigableMap<Integer, List<String>> slice = commands.subMap(start, true, end, true);
-            if (slice.isEmpty()) continue;
 
-            int segment = start / DISPATCH_SEGMENT_TICKS;
-            List<String> lines = new ArrayList<>();
-            for (int tick : slice.keySet()) {
-                lines.add("execute if score " + scoreHolder + " " + objective + " matches "
-                        + tick + " run function " + namespace + ":notes/t_" + tick);
-            }
-            write(functions.resolve("dispatch/s_" + segment + ".mcfunction"),
-                    String.join("\n", lines) + "\n");
-            root.add("execute if score " + scoreHolder + " " + objective + " matches "
-                    + start + ".." + end + " run function " + namespace + ":dispatch/s_" + segment);
-        }
-        write(functions.resolve("dispatch.mcfunction"), String.join("\n", root) + "\n");
+        List<Integer> ticks = new ArrayList<>(commands.keySet());
+        int[] nextNodeId = {0};
+        String rootTarget = buildDispatchNode(functions, namespace, ticks,
+                scoreHolder, objective, nextNodeId);
+        write(functions.resolve("dispatch.mcfunction"),
+                "execute if score " + scoreHolder + " " + objective + " matches "
+                        + ticks.get(0) + ".." + ticks.get(ticks.size() - 1)
+                        + " run " + rootTarget + "\n");
 
         for (Map.Entry<Integer, List<String>> entry : commands.entrySet()) {
             write(functions.resolve("notes/t_" + entry.getKey() + ".mcfunction"),
                     String.join("\n", entry.getValue()) + "\n");
         }
+    }
+
+    /**
+     * Returns a function command target. A leaf points directly to its note
+     * function; an internal node points to a small branch function.
+     */
+    private static String buildDispatchNode(Path functions, String namespace, List<Integer> ticks,
+                                            String scoreHolder, String objective,
+                                            int[] nextNodeId) throws IOException {
+        if (ticks.size() == 1) {
+            return "function " + namespace + ":notes/t_" + ticks.get(0);
+        }
+
+        int middle = ticks.size() / 2;
+        int pivot = ticks.get(middle);
+        int nodeId = nextNodeId[0]++;
+        List<String> lines = new ArrayList<>();
+
+        if (middle > 0) {
+            String left = buildDispatchNode(functions, namespace, ticks.subList(0, middle),
+                    scoreHolder, objective, nextNodeId);
+            lines.add("execute if score " + scoreHolder + " " + objective + " matches "
+                    + ticks.get(0) + ".." + (pivot - 1) + " run " + left);
+        }
+
+        lines.add("execute if score " + scoreHolder + " " + objective + " matches "
+                + pivot + " run function " + namespace + ":notes/t_" + pivot);
+
+        if (middle + 1 < ticks.size()) {
+            String right = buildDispatchNode(functions, namespace,
+                    ticks.subList(middle + 1, ticks.size()), scoreHolder, objective, nextNodeId);
+            lines.add("execute if score " + scoreHolder + " " + objective + " matches "
+                    + (pivot + 1) + ".." + ticks.get(ticks.size() - 1) + " run " + right);
+        }
+
+        write(functions.resolve("dispatch/n_" + nodeId + ".mcfunction"),
+                String.join("\n", lines) + "\n");
+        return "function " + namespace + ":dispatch/n_" + nodeId;
     }
 
     private static String objective(String namespace) {
