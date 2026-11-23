@@ -24,7 +24,8 @@ public final class DatapackGenerator {
     public static final int MAX_PHYSICAL_NOTES = 25_000;
     public static final int MAX_PHYSICAL_REPEATERS = 50_000;
     public static final int MAX_CHORD_NOTES = 28;
-    private static final int DISPATCH_SEGMENT_TICKS = 256;\n    private static final int PHYSICAL_SUSTAIN_INTERVAL = 6; // 300 ms, matching minimum circuit spacing
+    private static final int DISPATCH_SEGMENT_TICKS = 256;
+    private static final int PHYSICAL_SUSTAIN_INTERVAL = 6; // 300 ms, matching minimum circuit spacing
 
     private record Part(int track, int channel) implements Comparable<Part> {
         @Override
