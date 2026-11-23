@@ -23,6 +23,7 @@ public final class DatapackGenerator {
     public static final int MAX_PARTS = 64;
     public static final int MAX_PHYSICAL_NOTES = 25_000;
     public static final int MAX_PHYSICAL_REPEATERS = 50_000;
+    public static final int MAX_CHORD_NOTES = 28;
     private static final int DISPATCH_SEGMENT_TICKS = 256;
 
     private record Part(int track, int channel) implements Comparable<Part> {
@@ -66,6 +67,10 @@ public final class DatapackGenerator {
         if (backend == Backend.NOTE_BLOCK && totalPhysicalRepeaterCount(events) > MAX_PHYSICAL_REPEATERS) {
             throw new IllegalArgumentException("实体红石线路需要的中继器超过安全上限 "
                     + MAX_PHYSICAL_REPEATERS + " 个。");
+        }
+        if (backend == Backend.NOTE_BLOCK && maxChordSize(events) > MAX_CHORD_NOTES) {
+            throw new IllegalArgumentException("单个同时发声的和弦最多支持 " + MAX_CHORD_NOTES
+                    + " 个音符；当前和弦包含 " + maxChordSize(events) + " 个。");
         }
 
         String slug = sourceName.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_]", "_")
@@ -138,7 +143,7 @@ public final class DatapackGenerator {
                 byPart.computeIfAbsent(part(note), ignored -> new ArrayList<>()).add(note);
             }
 
-            int laneSpacing = maxChordSize(events) + 2;
+            int laneSpacing = chordRadius(maxChordSize(events)) * 2 + 2;
             String inputPosition = (origin.getX() - 1) + " " + (origin.getY() + 1)
                     + " " + origin.getZ();
             StringBuilder setup = new StringBuilder();
@@ -265,37 +270,45 @@ public final class DatapackGenerator {
         return delays;
     }
 
+    private static int chordRadius(int chordSize) {
+        return (chordSize + 1) / 2;
+    }
+
     private static void appendRepeaterStage(StringBuilder setup, int x, int y, int z,
                                             int delay, List<NoteEvent> chord) {
         setup.append("setblock ").append(x).append(' ').append(y).append(' ').append(z)
-                .append(" minecraft:stone keep\n");
+                .append(" minecraft:stone keep\\n");
         setup.append("setblock ").append(x).append(' ').append(y + 1).append(' ').append(z)
-                .append(" minecraft:repeater[delay=").append(delay).append(",facing=east] keep\n");
+                .append(" minecraft:repeater[delay=").append(delay).append(",facing=east] keep\\n");
 
-        String mainInstrumentBlock = chord.isEmpty() ? "minecraft:stone"
-                : baseBlock(blockInstrument(chord.get(0)));
+        // The repeater powers an opaque relay block. Dust on top of the relay
+        // directly powers note blocks placed beside the dust, so even glass
+        // and other transparent instrument-base blocks work correctly.
         setup.append("setblock ").append(x + 1).append(' ').append(y + 1).append(' ').append(z)
-                .append(' ').append(mainInstrumentBlock).append(" keep\n");
+                .append(" minecraft:stone keep\\n");
 
         if (!chord.isEmpty()) {
-            appendNoteBlock(setup, x + 1, y + 2, z, chord.get(0));
-            for (int i = 1; i < chord.size(); i++) {
+            setup.append("setblock ").append(x + 1).append(' ').append(y + 2).append(' ').append(z)
+                    .append(" minecraft:redstone_wire keep\\n");
+            for (int i = 0; i < chord.size(); i++) {
                 NoteEvent note = chord.get(i);
-                int branchZ = z + i;
-                setup.append("setblock ").append(x + 1).append(' ').append(y).append(' ').append(branchZ)
-                        .append(" minecraft:stone keep\n");
+                int radius = i / 2 + 1;
+                int branchZ = z + ((i % 2 == 0) ? radius : -radius);
                 setup.append("setblock ").append(x + 1).append(' ').append(y + 1).append(' ').append(branchZ)
-                        .append(" minecraft:redstone_wire keep\n");
+                        .append(" minecraft:stone keep\\n");
+                setup.append("setblock ").append(x + 1).append(' ').append(y + 2).append(' ').append(branchZ)
+                        .append(" minecraft:redstone_wire keep\\n");
                 setup.append("setblock ").append(x + 2).append(' ').append(y + 1).append(' ').append(branchZ)
-                        .append(' ').append(baseBlock(blockInstrument(note))).append(" keep\n");
+                        .append(' ').append(baseBlock(blockInstrument(note))).append(" keep\\n");
                 appendNoteBlock(setup, x + 2, y + 2, branchZ, note);
             }
         }
 
+        // A separate dust bridge carries the pulse to the next repeater.
         setup.append("setblock ").append(x + 2).append(' ').append(y).append(' ').append(z)
-                .append(" minecraft:stone keep\n");
+                .append(" minecraft:stone keep\\n");
         setup.append("setblock ").append(x + 2).append(' ').append(y + 1).append(' ').append(z)
-                .append(" minecraft:redstone_wire keep\n");
+                .append(" minecraft:redstone_wire keep\\n");
     }
 
     private static void appendNoteBlock(StringBuilder setup, int x, int y, int z, NoteEvent note) {
