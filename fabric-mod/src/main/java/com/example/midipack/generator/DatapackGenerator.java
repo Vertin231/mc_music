@@ -15,7 +15,7 @@ import java.util.*;
  * and redstone dust branches power note blocks for simultaneous chords.
  *
  * Repeater timing is quantized to even game ticks. Distinct event times are
- * separated by at least 4 game ticks to keep pulses distinct.
+ * separated by at least 6 game ticks to keep pulses distinct.
  */
 public final class DatapackGenerator {
     public enum Backend { PLAYSOUND, NOTE_BLOCK }
@@ -256,7 +256,7 @@ public final class DatapackGenerator {
     }
 
     private static int quantizedGap(int midiGap) {
-        return Math.max(4, ((midiGap + 1) / 2) * 2);
+        return Math.max(6, ((midiGap + 1) / 2) * 2);
     }
 
     private static List<Integer> repeaterDelays(int gameTicks) {
