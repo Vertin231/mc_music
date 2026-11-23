@@ -1,4 +1,4 @@
-# MIDI Pack — Fabric 1.20.4 (0.1.3)
+# MIDI Pack — Fabric 1.20.4 (0.1.6)
 
 MIDI Pack is a client GUI and server-side MIDI-to-datapack importer for Minecraft Java 1.20.4, Fabric, and Java 17.
 
@@ -14,7 +14,7 @@ MIDI Pack is a client GUI and server-side MIDI-to-datapack importer for Minecraf
   - **playsound** — maps MIDI pitches to note-block sound events; velocity controls volume.
   - **physical note blocks** — builds an actual redstone repeater chain with redstone dust branches and note blocks. No per-note `setblock redstone_block` commands are used.
 - Every Track + Channel gets an independent physical lane. Simultaneous notes in a chord are powered in parallel by one dust branch.
-- Play and Stop controls are available. There is no pause/resume system.
+- Play and Stop controls are available for generated datapack playback.\n- **Local SoundFont player (experimental):** load an SF2 bank and MIDI file by path, play locally, stop, and set volume. It does not generate blocks or stream audio to other players. Runtime SoundFont support depends on the Java Sound synthesizer provider.
 
 ## Physical redstone layout
 
@@ -55,11 +55,11 @@ The mod jars are written to `build/libs/`.
 ## Install and use
 
 1. Install Fabric Loader for Minecraft 1.20.4 and Fabric API.
-2. Copy `midipack-0.1.3.jar` into the instance's `mods` directory.
+2. Copy `midipack-0.1.6.jar` into the instance's `mods` directory.
 3. Start a world or join a server with this mod installed on the server. The importing player must have operator permission level 2.
 4. Press **M** and set the origin coordinates, or use the current player position.
 5. Click **Import MIDI**, select a .mid / .midi file, and import it.
-6. Run the generated function shown in chat, or use the GUI's Play control.
+6. Run the generated function shown in chat, or use the GUI's Play control.\n7. For experimental local audio, open **Local SoundFont player** and enter paths to an SF2 and MIDI file, load them, then use Play locally.
 
 **Important:** back up the world and choose a clear build area. The setup function uses `setblock ... keep`, so it will not overwrite existing blocks, but any occupied position can prevent part of the circuit from being placed. The redstone input block at `(x-1, y+1, z)` is replaced when playback starts.
 
