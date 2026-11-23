@@ -24,7 +24,7 @@ public final class DatapackGenerator {
     public static final int MAX_PHYSICAL_NOTES = 25_000;
     public static final int MAX_PHYSICAL_REPEATERS = 50_000;
     public static final int MAX_CHORD_NOTES = 28;
-    private static final int DISPATCH_SEGMENT_TICKS = 256;
+    private static final int DISPATCH_SEGMENT_TICKS = 256;\n    private static final int PHYSICAL_SUSTAIN_INTERVAL = 6; // 300 ms, matching minimum circuit spacing
 
     private record Part(int track, int channel) implements Comparable<Part> {
         @Override
@@ -60,15 +60,15 @@ public final class DatapackGenerator {
         if (countParts(events) > MAX_PARTS) {
             throw new IllegalArgumentException("声部数量超过限制：最多支持 " + MAX_PARTS + " 条并行轨道。");
         }
-        if (backend == Backend.NOTE_BLOCK && events.size() > MAX_PHYSICAL_NOTES) {
+        List<NoteEvent> physicalEvents = backend == Backend.NOTE_BLOCK ? expandPhysicalSustain(events) : events;\n        if (backend == Backend.NOTE_BLOCK && physicalEvents.size() > MAX_PHYSICAL_NOTES) {
             throw new IllegalArgumentException("音符盒轨道最多支持 " + MAX_PHYSICAL_NOTES
                     + " 个音符事件；当前文件包含 " + events.size() + " 个。");
         }
-        if (backend == Backend.NOTE_BLOCK && totalPhysicalRepeaterCount(events) > MAX_PHYSICAL_REPEATERS) {
+        if (backend == Backend.NOTE_BLOCK && totalPhysicalRepeaterCount(physicalEvents) > MAX_PHYSICAL_REPEATERS) {
             throw new IllegalArgumentException("实体红石线路需要的中继器超过安全上限 "
                     + MAX_PHYSICAL_REPEATERS + " 个。");
         }
-        if (backend == Backend.NOTE_BLOCK && maxChordSize(events) > MAX_CHORD_NOTES) {
+        if (backend == Backend.NOTE_BLOCK && maxChordSize(physicalEvents) > MAX_CHORD_NOTES) {
             throw new IllegalArgumentException("单个同时发声的和弦最多支持 " + MAX_CHORD_NOTES
                     + " 个音符；当前和弦包含 " + maxChordSize(events) + " 个。");
         }
@@ -116,11 +116,11 @@ public final class DatapackGenerator {
         int maxTick = events.stream().mapToInt(n -> n.mcTick() + n.durationTicks()).max().orElse(0);
 
         if (backend == Backend.PLAYSOUND) {
-            // Approximate sustain by retriggering every 4 game ticks (200 ms).
+            // Approximate sustain by retriggering every 6 game ticks (300 ms).
             // This is tremolo-like, not true MIDI note-off control.
             for (NoteEvent note : events) {
                 int end = note.mcTick() + Math.max(1, note.durationTicks());
-                for (int t = note.mcTick(); t < end; t += 4) {
+                for (int t = note.mcTick(); t < end; t += PHYSICAL_SUSTAIN_INTERVAL) {
                     commands.computeIfAbsent(t, ignored -> new ArrayList<>()).add(
                             String.format(Locale.ROOT, "playsound %s record @s ~ ~ ~ %.3f %.5f",
                                     soundFor(note), Math.max(0.05, note.velocity() / 127.0),
@@ -211,6 +211,23 @@ public final class DatapackGenerator {
         }
 
         return namespace;
+    }
+
+    /** Expand long MIDI notes into retrigger attacks for the physical note-block backend. */
+    private static List<NoteEvent> expandPhysicalSustain(List<NoteEvent> events) {
+        List<NoteEvent> expanded = new ArrayList<>();
+        for (NoteEvent note : events) {
+            expanded.add(note);
+            long end = (long) note.mcTick() + Math.max(1, note.durationTicks());
+            for (long tick = (long) note.mcTick() + PHYSICAL_SUSTAIN_INTERVAL;
+                 tick < end; tick += PHYSICAL_SUSTAIN_INTERVAL) {
+                if (expanded.size() >= MAX_PHYSICAL_NOTES)
+                    throw new IllegalArgumentException("延音重触发后事件数超过实体音符盒安全上限 " + MAX_PHYSICAL_NOTES + "。");
+                expanded.add(new NoteEvent((int) tick, 1, note.track(), note.channel(), note.program(),
+                        note.midiNote(), note.velocity()));
+            }
+        }
+        return expanded;
     }
 
     public static int maxChordSize(List<NoteEvent> events) {
