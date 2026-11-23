@@ -15,22 +15,22 @@ def test_note_block_pitch_modes():
     assert to_note_block_note(78) == 24
     with pytest.raises(ValueError):
         to_note_block_note(80)
-    assert to_note_block_note(80, "octave_fold") == 2
+    assert to_note_block_note(80, "octave_fold") == 14
     assert to_note_block_note(80, "clip") == 24
 
 
 def test_compiler_creates_setup_and_one_tick_pulse():
     score = Score(120, (
         Part(Instrument.PIANO, (
-            Measure(4, (Note(Fraction(0), Fraction(1), 60),)),
+            Measure(Fraction(4), (Note(Fraction(0), Fraction(1), 60),)),
         )),
     ))
     output = compile_to_noteblock(score)
     assert len(output.placements) == 1
-    setup = output.files["data/mc_music/functions/music/setup.mcfunction"]
+    setup = output.files["data/mc_music/function/music/setup.mcfunction"]
     assert "minecraft:note_block[instrument=harp,note=6,powered=false]" in setup
-    tick0 = output.files["data/mc_music/functions/music/tick_00000000.mcfunction"]
-    tick1 = output.files["data/mc_music/functions/music/tick_00000001.mcfunction"]
+    tick0 = output.files["data/mc_music/function/music/tick_00000000.mcfunction"]
+    tick1 = output.files["data/mc_music/function/music/tick_00000001.mcfunction"]
     assert "minecraft:redstone_block" in tick0
     assert "minecraft:air" in tick1
 
@@ -68,7 +68,8 @@ def test_midi_import(tmp_path):
 def test_write_datapack(tmp_path):
     score = Score(120, (Part(Instrument.PIANO, (Measure(4, (Note(0, 1, 60),)),)),))
     output = compile_to_noteblock(score)
-    root = write_datapack(output, tmp_path / "pack", pack_format=94)
+    root = write_datapack(output, tmp_path / "pack", pack_format=121)
     meta = json.loads((root / "pack.mcmeta").read_text())
-    assert meta["pack"]["pack_format"] == 94
-    assert (root / "data/mc_music/functions/music/start.mcfunction").exists()
+    assert meta["pack"]["min_format"] == [121, 0]
+    assert meta["pack"]["max_format"] == 121
+    assert (root / "data/mc_music/function/music/start.mcfunction").exists()
