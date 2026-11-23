@@ -38,27 +38,21 @@ public final class MidiPackScreen extends Screen {
             if (origin != null) MidiFilePicker.open(origin);
         }).dimensions(center - 108, top + 79, 216, 20).build());
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Play · playsound"),
-                button -> MidiPackClient.action(MidiPackClient.lastNamespace + "_sound", "play"))
-                .dimensions(center - 108, top + 106, 104, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Play · note blocks"),
-                button -> MidiPackClient.action(MidiPackClient.lastNamespace + "_blocks", "play"))
-                .dimensions(center + 4, top + 106, 104, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Play · playsound"), button -> {
+            MidiPackClient.action(MidiPackClient.lastNamespace + "_sound", "stop");
+            MidiPackClient.action(MidiPackClient.lastNamespace + "_sound", "play");
+        }).dimensions(center - 108, top + 106, 104, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Play · note blocks"), button -> {
+            MidiPackClient.action(MidiPackClient.lastNamespace + "_blocks", "stop");
+            MidiPackClient.action(MidiPackClient.lastNamespace + "_blocks", "play");
+        }).dimensions(center + 4, top + 106, 104, 20).build());
 
-        addDrawableChild(ButtonWidget.builder(Text.literal("Pause both"), button -> {
-            MidiPackClient.action(MidiPackClient.lastNamespace + "_sound", "pause");
-            MidiPackClient.action(MidiPackClient.lastNamespace + "_blocks", "pause");
-        }).dimensions(center - 108, top + 133, 104, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Resume both"), button -> {
-            MidiPackClient.action(MidiPackClient.lastNamespace + "_sound", "resume");
-            MidiPackClient.action(MidiPackClient.lastNamespace + "_blocks", "resume");
-        }).dimensions(center + 4, top + 133, 104, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("Stop both"), button -> {
             MidiPackClient.action(MidiPackClient.lastNamespace + "_sound", "stop");
             MidiPackClient.action(MidiPackClient.lastNamespace + "_blocks", "stop");
-        }).dimensions(center - 108, top + 160, 216, 20).build());
+        }).dimensions(center - 108, top + 133, 216, 20).build());
         addDrawableChild(ButtonWidget.builder(Text.literal("Done"), button -> close())
-                .dimensions(center - 108, top + 187, 216, 20).build());
+                .dimensions(center - 108, top + 160, 216, 20).build());
     }
 
     private void setCoordinates(BlockPos pos) {
@@ -100,7 +94,7 @@ public final class MidiPackScreen extends Screen {
         context.drawCenteredTextWithShadow(textRenderer, Text.literal("Z"),
                 width / 2 + 75, height / 2 - 99, 0xFFFFFF);
         context.drawCenteredTextWithShadow(textRenderer,
-                Text.literal("One +X lane per Track + Channel; lanes spaced along +Z"),
+                Text.literal("One chronological +X lane per Track + Channel"),
                 width / 2, height / 2 + 99, 0xA0A0A0);
         super.render(context, mouseX, mouseY, delta);
     }
