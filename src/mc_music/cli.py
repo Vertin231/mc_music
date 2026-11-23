@@ -15,6 +15,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-o", "--output", default="mc_music_datapack", help="output datapack directory")
     parser.add_argument("--pack-format", type=int, default=121,
                         help="data-pack format (default 121 for Java 26.3)")
+    parser.add_argument("--ppq", type=int, default=960,
+                        help="exact PPQ resolution (default 960; conversion fails if not exact)")
     parser.add_argument("--namespace", default="mc_music")
     parser.add_argument("--origin", nargs=3, type=int, default=(0, 64, 0),
                         metavar=("X", "Y", "Z"))
@@ -29,6 +31,7 @@ def main(argv=None) -> int:
         args.midi,
         args.output,
         pack_format=args.pack_format,
+        ppq=args.ppq,
         origin=tuple(args.origin),
         namespace=args.namespace,
         pitch_mode=args.pitch_mode,
