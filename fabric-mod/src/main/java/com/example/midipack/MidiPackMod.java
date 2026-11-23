@@ -62,7 +62,7 @@ public class MidiPackMod implements ModInitializer {
             player.sendMessage(Text.literal("MIDI 文件为空或超过 512 KiB 限制。"), false);
             return;
         }
-        String normalizedName = filename == null ? "" : filename.replace('\\\\', '/');
+        String normalizedName = filename == null ? "" : filename.replace('\\', '/');
         int separator = normalizedName.lastIndexOf('/');
         String safeName = separator >= 0 ? normalizedName.substring(separator + 1) : normalizedName;
         if (safeName.isBlank() || safeName.equals(".") || safeName.equals("..")) {
