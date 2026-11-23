@@ -26,3 +26,11 @@ jobs:
       - name: Build Fabric mod
         working-directory: fabric-mod
         run: gradle build --no-daemon
+      - name: Upload mod jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: midipack-fabric-1.20.4
+          path: |
+            fabric-mod/build/libs/*.jar
+            !fabric-mod/build/libs/*-sources.jar
+          if-no-files-found: error
