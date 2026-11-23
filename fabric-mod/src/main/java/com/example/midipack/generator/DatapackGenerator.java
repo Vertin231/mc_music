@@ -21,6 +21,7 @@ public final class DatapackGenerator {
 
     public static final int MAX_PARTS = 64;
     public static final int MAX_PHYSICAL_NOTES = 25_000;
+    private static final int DISPATCH_SEGMENT_TICKS = 256;
 
     private record Part(int track, int channel) implements Comparable<Part> {
         @Override
@@ -200,8 +201,9 @@ public final class DatapackGenerator {
     }
 
     /**
-     * Build a balanced scoreboard decision tree. This keeps dispatch cost
-     * logarithmic in the number of distinct event ticks, even for long songs.
+     * Group event ticks into small time windows, then build a balanced tree
+     * over those windows. This bounds per-tick dispatch work while avoiding
+     * a huge flat function for long MIDI files.
      */
     private static void writeDispatch(Path functions, String namespace,
                                       NavigableMap<Integer, List<String>> commands,
@@ -211,14 +213,32 @@ public final class DatapackGenerator {
             return;
         }
 
-        List<Integer> ticks = new ArrayList<>(commands.keySet());
+        NavigableMap<Integer, List<Integer>> segmentTicks = new TreeMap<>();
+        for (int tick : commands.keySet()) {
+            segmentTicks.computeIfAbsent(tick / DISPATCH_SEGMENT_TICKS,
+                    ignored -> new ArrayList<>()).add(tick);
+        }
+
+        for (Map.Entry<Integer, List<Integer>> segment : segmentTicks.entrySet()) {
+            List<String> lines = new ArrayList<>();
+            for (int tick : segment.getValue()) {
+                lines.add("execute if score " + scoreHolder + " " + objective + " matches "
+                        + tick + " run function " + namespace + ":notes/t_" + tick);
+            }
+            write(functions.resolve("dispatch/s_" + segment.getKey() + ".mcfunction"),
+                    String.join("\n", lines) + "\n");
+        }
+
+        List<Integer> segmentIds = new ArrayList<>(segmentTicks.keySet());
         int[] nextNodeId = {0};
-        String rootTarget = buildDispatchNode(functions, namespace, ticks,
+        String rootTarget = buildDispatchNode(functions, namespace, segmentIds,
                 scoreHolder, objective, nextNodeId);
+        int minTick = segmentIds.get(0) * DISPATCH_SEGMENT_TICKS;
+        int maxTick = segmentIds.get(segmentIds.size() - 1) * DISPATCH_SEGMENT_TICKS
+                + DISPATCH_SEGMENT_TICKS - 1;
         write(functions.resolve("dispatch.mcfunction"),
                 "execute if score " + scoreHolder + " " + objective + " matches "
-                        + ticks.get(0) + ".." + ticks.get(ticks.size() - 1)
-                        + " run " + rootTarget + "\n");
+                        + minTick + ".." + maxTick + " run " + rootTarget + "\n");
 
         for (Map.Entry<Integer, List<String>> entry : commands.entrySet()) {
             write(functions.resolve("notes/t_" + entry.getKey() + ".mcfunction"),
@@ -227,36 +247,42 @@ public final class DatapackGenerator {
     }
 
     /**
-     * Returns a function command target. A leaf points directly to its note
-     * function; an internal node points to a small branch function.
+     * Returns a function command target. Leaves point to a time-window
+     * dispatcher; internal nodes divide the scoreboard clock range in half.
      */
-    private static String buildDispatchNode(Path functions, String namespace, List<Integer> ticks,
+    private static String buildDispatchNode(Path functions, String namespace, List<Integer> segments,
                                             String scoreHolder, String objective,
                                             int[] nextNodeId) throws IOException {
-        if (ticks.size() == 1) {
-            return "function " + namespace + ":notes/t_" + ticks.get(0);
+        if (segments.size() == 1) {
+            return "function " + namespace + ":dispatch/s_" + segments.get(0);
         }
 
-        int middle = ticks.size() / 2;
-        int pivot = ticks.get(middle);
+        int middle = segments.size() / 2;
+        int pivot = segments.get(middle);
+        int pivotStart = pivot * DISPATCH_SEGMENT_TICKS;
+        int pivotEnd = pivotStart + DISPATCH_SEGMENT_TICKS - 1;
         int nodeId = nextNodeId[0]++;
         List<String> lines = new ArrayList<>();
 
         if (middle > 0) {
-            String left = buildDispatchNode(functions, namespace, ticks.subList(0, middle),
+            String left = buildDispatchNode(functions, namespace, segments.subList(0, middle),
                     scoreHolder, objective, nextNodeId);
+            int leftStart = segments.get(0) * DISPATCH_SEGMENT_TICKS;
             lines.add("execute if score " + scoreHolder + " " + objective + " matches "
-                    + ticks.get(0) + ".." + (pivot - 1) + " run " + left);
+                    + leftStart + ".." + (pivotStart - 1) + " run " + left);
         }
 
         lines.add("execute if score " + scoreHolder + " " + objective + " matches "
-                + pivot + " run function " + namespace + ":notes/t_" + pivot);
+                + pivotStart + ".." + pivotEnd + " run function "
+                + namespace + ":dispatch/s_" + pivot);
 
-        if (middle + 1 < ticks.size()) {
+        if (middle + 1 < segments.size()) {
             String right = buildDispatchNode(functions, namespace,
-                    ticks.subList(middle + 1, ticks.size()), scoreHolder, objective, nextNodeId);
+                    segments.subList(middle + 1, segments.size()), scoreHolder, objective, nextNodeId);
+            int rightEnd = segments.get(segments.size() - 1) * DISPATCH_SEGMENT_TICKS
+                    + DISPATCH_SEGMENT_TICKS - 1;
             lines.add("execute if score " + scoreHolder + " " + objective + " matches "
-                    + (pivot + 1) + ".." + ticks.get(ticks.size() - 1) + " run " + right);
+                    + (pivotEnd + 1) + ".." + rightEnd + " run " + right);
         }
 
         write(functions.resolve("dispatch/n_" + nodeId + ".mcfunction"),
