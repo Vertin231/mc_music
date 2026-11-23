@@ -115,9 +115,14 @@ public final class MidiPackMod implements ModInitializer {
             return false;
         }
         int chordSize=DatapackGenerator.maxChordSize(events);
-        int laneSpacing=chordSize+2;
-        BlockPos start=origin.add(-1,0,0);
-        BlockPos end=origin.add((repeaters-1)*3+2,2,Math.max(0,parts-1)*laneSpacing+chordSize-1);
+        if(chordSize>DatapackGenerator.MAX_CHORD_NOTES) {
+            player.sendMessage(Text.literal("单个和弦最多支持 "+DatapackGenerator.MAX_CHORD_NOTES+" 个音符。"),false);
+            return false;
+        }
+        int chordRadius=(chordSize+1)/2;
+        int laneSpacing=chordRadius*2+2;
+        BlockPos start=origin.add(-1,0,-chordRadius);
+        BlockPos end=origin.add((repeaters-1)*3+2,2,Math.max(0,parts-1)*laneSpacing+chordRadius);
         if(!world.getWorldBorder().contains(start)||!world.getWorldBorder().contains(end)) {
             player.sendMessage(Text.literal("实体红石轨道超出世界边界，请调整 X/Z 起点。"),false); return false;
         }
