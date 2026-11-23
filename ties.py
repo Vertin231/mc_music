@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Tie references and tie-chain resolution for a Part's note segments."""
 from dataclasses import dataclass
 from fractions import Fraction
