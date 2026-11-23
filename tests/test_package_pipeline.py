@@ -5,7 +5,7 @@ import mido
 import pytest
 
 from mc_music import (
-    Instrument, Measure, Note, Part, Score,
+    Instrument, Measure, Note, NoteRef, Part, Score, Tie,
     compile_to_noteblock, load_midi, to_note_block_note, write_datapack,
 )
 
@@ -30,9 +30,9 @@ def test_compiler_creates_setup_and_one_tick_pulse():
     setup = output.files["data/mc_music/function/music/setup.mcfunction"]
     assert "minecraft:note_block[instrument=harp,note=6,powered=false]" in setup
     tick0 = output.files["data/mc_music/function/music/tick_00000000.mcfunction"]
-    tick1 = output.files["data/mc_music/function/music/tick_00000001.mcfunction"]
+    tick10 = output.files["data/mc_music/function/music/tick_00000010.mcfunction"]
     assert "minecraft:redstone_block" in tick0
-    assert "minecraft:air" in tick1
+    assert "minecraft:air" in tick10
 
 
 def test_same_tick_same_physical_note_is_rejected():
@@ -44,6 +44,26 @@ def test_same_tick_same_physical_note_is_rejected():
     ))
     with pytest.raises(ValueError, match="same-tick collision"):
         compile_to_noteblock(Score(120, (part,)))
+
+
+def test_ppq_conversion_is_exact_or_fails():
+    part = Part(Instrument.PIANO, (
+        Measure(4, (Note(Fraction(1, 7), Fraction(1, 7), 60),)),
+    ))
+    with pytest.raises(ValueError, match="cannot be represented exactly"):
+        compile_to_noteblock(Score(120, (part,)), ppq=960)
+    compiled = compile_to_noteblock(Score(120, (part,)), ppq=7)
+    assert compiled.schedule
+
+
+def test_tie_chain_merges_into_one_event():
+    part = Part(Instrument.PIANO, (
+        Measure(4, (Note(3, 1, 60),)),
+        Measure(4, (Note(0, 1, 60),)),
+    ))
+    matrix = part.to_matrix(ties=(Tie(NoteRef(0, 0), NoteRef(1, 0)),))
+    assert len(matrix) == 1
+    assert matrix.duration.tolist() == [4 * 960]
 
 
 def test_midi_import(tmp_path):
