@@ -13,8 +13,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("midi", help="input .mid/.midi file")
     parser.add_argument("-o", "--output", default="mc_music_datapack", help="output datapack directory")
-    parser.add_argument("--pack-format", type=int, required=True,
-                        help="data-pack format number for your exact Minecraft Java version")
+    parser.add_argument("--pack-format", type=int, default=121,
+                        help="data-pack format (default 121 for Java 26.3)")
     parser.add_argument("--namespace", default="mc_music")
     parser.add_argument("--origin", nargs=3, type=int, default=(0, 64, 0),
                         metavar=("X", "Y", "Z"))
