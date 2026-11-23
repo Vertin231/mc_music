@@ -6,7 +6,8 @@ MIDI Pack is a client GUI and server-side MIDI-to-datapack importer for Minecraf
 
 - Press **M** to open the in-game MIDI Pack screen.
 - Import a .mid / .midi file through the operating system's native file dialog.
-- Transfer the selected file to the integrated or dedicated server using a Fabric custom payload.
+- Transfer the selected file to the integrated or dedicated server using a Fabric custom payload; client networking is marshalled back onto the Minecraft client thread.
+- Parse uploaded MIDI on a background worker so large files do not block the server tick loop.
 - Parse Standard MIDI Format 0/1 with Java's built-in javax.sound.midi, including PPQ tempo changes and GM program changes.
 - Generate two independent datapacks in the current world's datapacks directory:
   - **playsound** — maps MIDI pitches to note-block sound events; velocity controls volume.
