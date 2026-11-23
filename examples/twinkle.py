@@ -1,4 +1,4 @@
-"""Create a tiny example score and compile it to a datapack."""
+"""Create a tiny example score and compile it to a Java 26.3 datapack."""
 from fractions import Fraction
 from pathlib import Path
 
@@ -24,5 +24,5 @@ melody = Part(
 
 score = Score(120, (melody,), title="Twinkle example")
 compiled = compile_to_noteblock(score, origin=(0, 64, 0), pitch_mode="strict")
-write_datapack(compiled, Path("twinkle_datapack"), pack_format=94)
+write_datapack(compiled, Path("twinkle_datapack"), pack_format=121)
 print("Run /function mc_music:music/start in Minecraft.")
