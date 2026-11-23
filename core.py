@@ -151,7 +151,11 @@ class Measure:
         object.__setattr__(self, "notes", notes)
 
     def at(self, start: Fraction) -> tuple[Note, ...]:
+        """Return notes whose onset equals start; does not query sustained notes.
 
+        For notes sounding across measure boundaries, use absolute event times
+        (for example Part.iter_absolute() and compare start <= t < end).
+        """
         start = as_fraction(start, "start")
 
         if start < 0:
@@ -378,11 +382,17 @@ class Score:
 
         return self.parts[0].total_beats()
 
-    def to_matrix(self, ppq: int = PPQ_DEFAULT, ties_by_part=None) -> NoteMatrix:
-        """Flatten the score into one absolute-time NoteMatrix."""
-        ties_by_part = ties_by_part or {}
-        matrices = [part.to_matrix(ppq, ties=ties_by_part.get(part.instrument, ()))
-                    for part in self.parts]
+    def to_matrix(self, ppq: int = PPQ_DEFAULT, ties_by_part_index=None) -> NoteMatrix:
+        """Flatten the score into one absolute-time NoteMatrix.
+
+        ties_by_part_index maps the zero-based Part index to that Part's Tie tuple.
+        This avoids collisions when multiple Parts use the same Instrument.
+        """
+        ties_by_part_index = ties_by_part_index or {}
+        matrices = [
+            part.to_matrix(ppq, ties=ties_by_part_index.get(index, ()))
+            for index, part in enumerate(self.parts)
+        ]
         return NoteMatrix(
             ppq,
             np.concatenate([m.start for m in matrices]),
