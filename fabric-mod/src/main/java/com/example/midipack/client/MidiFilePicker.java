@@ -1,23 +1,32 @@
 package com.example.midipack.client;
 
-import javax.swing.JFileChooser;
-import javax.swing.SwingUtilities;
-import javax.swing.filechooser.FileNameExtensionFilter;
+import java.awt.EventQueue;
+import java.awt.FileDialog;
+import java.awt.Frame;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-/** Opens the operating system's native file chooser without blocking the render thread. */
+/** Opens the operating system native file dialog without blocking the render thread. */
 public final class MidiFilePicker {
     private MidiFilePicker() {}
 
     public static void open() {
-        Thread thread = new Thread(() -> SwingUtilities.invokeLater(() -> {
-            JFileChooser chooser = new JFileChooser();
-            chooser.setDialogTitle("Select a MIDI file");
-            chooser.setFileFilter(new FileNameExtensionFilter("MIDI files (*.mid, *.midi)", "mid", "midi"));
-            if (chooser.showOpenDialog(null) != JFileChooser.APPROVE_OPTION) return;
-            Path selected = chooser.getSelectedFile().toPath();
+        EventQueue.invokeLater(() -> {
+            Frame owner = new Frame();
+            FileDialog dialog = new FileDialog(owner, "Select a MIDI file", FileDialog.LOAD);
+            dialog.setFilenameFilter((directory, name) -> {
+                String lower = name.toLowerCase(java.util.Locale.ROOT);
+                return lower.endsWith(".mid") || lower.endsWith(".midi");
+            });
+            dialog.setVisible(true);
+            String filename = dialog.getFile();
+            String directory = dialog.getDirectory();
+            dialog.dispose();
+            owner.dispose();
+            if (filename == null || directory == null) return;
+
             try {
+                Path selected = Path.of(directory, filename);
                 long size = Files.size(selected);
                 if (size <= 0 || size > 512 * 1024) {
                     MidiPackClient.notifyUser("MIDI 文件必须大于 0 且不超过 512 KiB。");
@@ -28,8 +37,6 @@ public final class MidiFilePicker {
             } catch (Exception e) {
                 MidiPackClient.notifyUser("读取 MIDI 失败：" + e.getMessage());
             }
-        }), "midipack-file-picker");
-        thread.setDaemon(true);
-        thread.start();
+        });
     }
 }
