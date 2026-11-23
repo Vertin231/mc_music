@@ -1,7 +1,10 @@
 """Tie references and tie-chain resolution for a Part's note segments."""
 from dataclasses import dataclass
 from fractions import Fraction
-from core import Part
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from core import Part
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,7 +61,11 @@ def resolve_ties(part: Part, ties=()) -> tuple[ResolvedNote, ...]:
         if ref in incoming:
             continue
         duration, current, chain = note.duration, ref, [ref]
+        seen = set()
         while current in outgoing:
+            if current in seen:
+                raise ValueError(f"Tie chain contains a cycle at {current}")
+            seen.add(current)
             current = outgoing[current]
             _, next_note = locations[current]
             duration += next_note.duration
