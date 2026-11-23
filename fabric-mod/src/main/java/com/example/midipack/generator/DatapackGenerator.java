@@ -346,23 +346,18 @@ public final class DatapackGenerator {
             int offset = i / 2 + 1;
             int branchZ = z + ((i % 2 == 0) ? offset : -offset);
 
-            // The transverse dust bus feeds an east-facing branch repeater
-            // from the west. The repeater then powers the note block directly
-            // from its output side, avoiding ambiguous dust-to-note-block power.
-            setup.append("setblock ").append(x + 2).append(' ').append(y).append(' ').append(branchZ)
-                    .append(" minecraft:stone keep\n");
-            setup.append("setblock ").append(x + 2).append(' ').append(y + 1).append(' ').append(branchZ)
-                    .append(" minecraft:repeater[delay=1,facing=east] keep\n");
-
+            // Put the note block directly in line with the dust bus.
+            // The dust at (x + 1, y + 1, branchZ) touches and powers the
+            // note block at (x + 2, y + 1, branchZ); no branch repeater is used.
             // The instrument block sits directly below the note block.
             // Falling-block bases such as sand get an extra stone support.
-            setup.append("setblock ").append(x + 3).append(' ').append(y).append(' ').append(branchZ)
+            setup.append("setblock ").append(x + 2).append(' ').append(y).append(' ').append(branchZ)
                     .append(' ').append(baseBlock(blockInstrument(note))).append(" keep\n");
             if ("minecraft:sand".equals(baseBlock(blockInstrument(note)))) {
-                setup.append("setblock ").append(x + 3).append(' ').append(y - 1).append(' ').append(branchZ)
+                setup.append("setblock ").append(x + 2).append(' ').append(y - 1).append(' ').append(branchZ)
                         .append(" minecraft:stone keep\n");
             }
-            appendNoteBlock(setup, x + 3, y + 1, branchZ, note);
+            appendNoteBlock(setup, x + 2, y + 1, branchZ, note);
         }
     }
 
