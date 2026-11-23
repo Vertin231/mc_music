@@ -1,7 +1,7 @@
 """Compile Scores into Minecraft Java Edition note-block datapacks.
 
-Playback uses a temporary redstone block beside each note block. A one-tick
-pulse is emitted by scheduled functions; no redstone wiring is generated.
+Playback uses a temporary redstone block beside each note block. One-tick
+pulses are emitted by scheduled functions; no redstone wiring is generated.
 """
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 import json
+import operator
 import re
 
 from .core import Instrument, Score
@@ -30,8 +31,8 @@ INSTRUMENT_BASE_BLOCK = {
     "flute": "clay",
     "guitar": "white_wool",
 }
-MIDI_NOTE_MIN = 54  # F#3, note-block note property 0
-MIDI_NOTE_MAX = 78  # F#5, note-block note property 24
+MIDI_NOTE_MIN = 54  # F#3 maps to note-block note 0
+MIDI_NOTE_MAX = 78  # F#5 maps to note-block note 24
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,27 +55,31 @@ class NoteBlockOutput:
 
 def to_note_block_note(midi: int, pitch_mode: str = "strict") -> int:
     """Map MIDI pitch to vanilla note-block pitch (0..24)."""
+    if isinstance(midi, bool):
+        raise TypeError("midi must be an integer")
+    try:
+        midi = operator.index(midi)
+    except TypeError:
+        raise TypeError("midi must be an integer") from None
+    if not 0 <= midi <= 127:
+        raise ValueError("midi must be in 0..127")
     if pitch_mode not in {"strict", "octave_fold", "clip"}:
         raise ValueError("pitch_mode must be 'strict', 'octave_fold', or 'clip'")
-    note = int(midi) - MIDI_NOTE_MIN
+    note = midi - MIDI_NOTE_MIN
     if 0 <= note <= 24:
-        return note
+        return int(note)
     if pitch_mode == "strict":
         raise ValueError(
             f"MIDI pitch {midi} is outside the vanilla note-block range "
             f"{MIDI_NOTE_MIN}..{MIDI_NOTE_MAX}; choose octave_fold or clip explicitly"
         )
     if pitch_mode == "clip":
-        return min(24, max(0, note))
+        return int(min(24, max(0, note)))
     while note < 0:
         note += 12
     while note > 24:
         note -= 12
-    return note
-
-
-def _add(a, b):
-    return tuple(x + y for x, y in zip(a, b))
+    return int(note)
 
 
 def _pos_text(pos):
@@ -94,18 +99,19 @@ def compile_to_noteblock(
     ties_by_part_index: dict[int, tuple[Tie, ...]] | None = None,
     spacing: int = 3,
 ) -> NoteBlockOutput:
-    """Compile a score to datapack function sources.
+    """Compile a Score to function sources.
 
-    Each (instrument, MIDI pitch) owns one note block. The note block sits one
-    block above its instrument base; the temporary redstone block is placed
-    beside it. The control position is cleared one game tick after each attack.
+    A note block is one block above its instrument base. Its control position
+    is one block to the east, leaving the block below free for timbre selection.
+    Every redstone pulse is explicitly removed one game tick after its attack.
     """
     if not re.fullmatch(r"[a-z0-9_.-]+", namespace):
         raise ValueError("namespace must contain lowercase letters, digits, '_', '.', or '-'")
-    if len(origin) != 3 or any(isinstance(v, bool) or not isinstance(v, int) for v in origin):
+    if (not isinstance(origin, tuple) or len(origin) != 3 or
+            any(isinstance(v, bool) or not isinstance(v, int) for v in origin)):
         raise TypeError("origin must be a tuple of three integers")
-    if isinstance(spacing, bool) or not isinstance(spacing, int) or spacing < 2:
-        raise ValueError("spacing must be an integer >= 2")
+    if isinstance(spacing, bool) or not isinstance(spacing, int) or spacing < 3:
+        raise ValueError("spacing must be an integer >= 3 to prevent adjacent control blocks")
 
     ties_by_part_index = ties_by_part_index or {}
     events = []
@@ -120,8 +126,10 @@ def compile_to_noteblock(
     if not events:
         raise ValueError("score contains no notes")
 
-    combos = sorted({(instrument, midi, note) for _, instrument, midi, note, _ in events},
-                    key=lambda item: (int(item[0]), item[1]))
+    combos = sorted(
+        {(instrument, midi, note) for _, instrument, midi, note, _ in events},
+        key=lambda item: (int(item[0]), item[1]),
+    )
     ox, oy, oz = origin
     placements = []
     by_combo = {}
@@ -135,7 +143,6 @@ def compile_to_noteblock(
         placements.append(placement)
         by_combo[(instrument, midi, note)] = placement
 
-    # Each attack has an ON action and a matching OFF one tick later.
     actions = defaultdict(lambda: {"off": set(), "on": set()})
     seen_attacks = set()
     for tick, instrument, midi, note, velocity in events:
@@ -159,6 +166,7 @@ def compile_to_noteblock(
     for index, tick in enumerate(ordered_ticks):
         lines = []
         current = actions[tick]
+        # OFF first is essential when the same note is attacked on consecutive ticks.
         for placement in sorted(current["off"], key=lambda p: p.control_pos):
             lines.append(f"setblock {_pos_text(placement.control_pos)} minecraft:air replace")
         for placement in sorted(current["on"], key=lambda p: p.control_pos):
@@ -166,7 +174,7 @@ def compile_to_noteblock(
         if index + 1 < len(ordered_ticks):
             next_tick = ordered_ticks[index + 1]
             delta = next_tick - tick
-            next_path = _function_path(next_tick).removesuffix(".mcfunction").replace("/", ":")
+            next_path = _function_path(next_tick).removesuffix(".mcfunction")
             lines.append(f"schedule function {namespace}:{next_path} {delta}t append")
         functions[_function_path(tick)] = "\n".join(lines) + "\n"
 
@@ -182,22 +190,19 @@ def compile_to_noteblock(
         setup_lines.append(f"setblock {_pos_text(placement.control_pos)} minecraft:air replace")
 
     first_tick = ordered_ticks[0]
-    first_path = _function_path(first_tick).removesuffix(".mcfunction").replace("/", ":")
-    start_lines = ["function " + namespace + ":music/setup"]
+    first_path = _function_path(first_tick).removesuffix(".mcfunction")
+    start_lines = [f"function {namespace}:music/setup"]
     if first_tick == 0:
         start_lines.append(f"function {namespace}:{first_path}")
     else:
         start_lines.append(f"schedule function {namespace}:{first_path} {first_tick}t replace")
 
     files = {
-        "data/minecraft/tags/functions/load.json": json.dumps(
-            {"values": []}, indent=2
-        ) + "\n",
-        f"data/{namespace}/functions/music/setup.mcfunction": "\n".join(setup_lines) + "\n",
-        f"data/{namespace}/functions/music/start.mcfunction": "\n".join(start_lines) + "\n",
+        f"data/{namespace}/function/music/setup.mcfunction": "\n".join(setup_lines) + "\n",
+        f"data/{namespace}/function/music/start.mcfunction": "\n".join(start_lines) + "\n",
     }
     for path, source in functions.items():
-        files[f"data/{namespace}/functions/{path}"] = source
+        files[f"data/{namespace}/function/{path}"] = source
 
     schedule = {
         tick: tuple(sorted(actions[tick]["on"], key=lambda p: (p.instrument.value, p.midi)))
@@ -210,18 +215,19 @@ def write_datapack(
     output: NoteBlockOutput,
     destination: str | Path,
     *,
-    pack_format: int,
+    pack_format: int = 121,
     description: str = "Generated by mc_music",
 ) -> Path:
-    """Write a compiled datapack directory. Zip it separately if desired."""
+    """Write a Java 26.x-style datapack directory (default format: 26.3 / 121.0)."""
     if isinstance(pack_format, bool) or not isinstance(pack_format, int) or pack_format <= 0:
-        raise ValueError("pack_format must be a positive integer for the target Java version")
+        raise ValueError("pack_format must be a positive integer")
     root = Path(destination)
     root.mkdir(parents=True, exist_ok=True)
     meta = {
         "pack": {
-            "pack_format": pack_format,
             "description": description,
+            "min_format": [pack_format, 0],
+            "max_format": pack_format,
         }
     }
     (root / "pack.mcmeta").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
@@ -236,7 +242,7 @@ def midi_to_datapack(
     midi_path: str | Path,
     destination: str | Path,
     *,
-    pack_format: int,
+    pack_format: int = 121,
     origin: tuple[int, int, int] = (0, 64, 0),
     namespace: str = "mc_music",
     pitch_mode: str = "strict",
