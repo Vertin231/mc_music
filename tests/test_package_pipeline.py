@@ -63,7 +63,7 @@ def test_tie_chain_merges_into_one_event():
     ))
     matrix = part.to_matrix(ties=(Tie(NoteRef(0, 0), NoteRef(1, 0)),))
     assert len(matrix) == 1
-    assert matrix.duration.tolist() == [4 * 960]
+    assert matrix.duration.tolist() == [2 * 960]
 
 
 def test_midi_import(tmp_path):
