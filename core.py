@@ -16,7 +16,7 @@ def as_fraction(value, field_name: str) -> Fraction:
     if isinstance(value, Fraction):
         return value
     if isinstance(value, bool):
-        raise Type TypeError(f"{field_name} must be an int or Fraction, got bool")
+        raise TypeError(f"{field_name} must be an int or Fraction, got bool")
     try:
         return Fraction(operator.index(value))
     except TypeError:
