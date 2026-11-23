@@ -111,3 +111,10 @@ pytest
 ```
 
 The project is being developed on the `midi-to-noteblock-datapack` branch. The original `numpy-ppq-tie-layer` branch and `main` are not modified by this work.
+
+
+## Fabric GUI mod (Minecraft 1.20.4)
+
+A separate Java 17 Fabric project now lives in [`fabric-mod/`](fabric-mod/README.md). It adds an in-game MIDI control screen (press **M**), a native OS file picker, server-side MIDI import, and two generated datapack playback backends: `playsound` and physical note blocks pulsed by redstone blocks.
+
+Build instructions and current limitations are documented in [fabric-mod/README.md](fabric-mod/README.md).
