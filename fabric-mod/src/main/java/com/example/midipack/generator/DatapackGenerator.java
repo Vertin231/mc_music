@@ -63,6 +63,10 @@ public final class DatapackGenerator {
             throw new IllegalArgumentException("音符盒轨道最多支持 " + MAX_PHYSICAL_NOTES
                     + " 个音符事件；当前文件包含 " + events.size() + " 个。");
         }
+        if (backend == Backend.NOTE_BLOCK && totalPhysicalRepeaterCount(events) > MAX_PHYSICAL_REPEATERS) {
+            throw new IllegalArgumentException("实体红石线路需要的中继器超过安全上限 "
+                    + MAX_PHYSICAL_REPEATERS + " 个。");
+        }
 
         String slug = sourceName.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_]", "_")
                 .replaceAll("_+", "_");
@@ -208,6 +212,23 @@ public final class DatapackGenerator {
             max = Math.max(max, count);
         }
         return max;
+    }
+
+    public static int totalPhysicalRepeaterCount(List<NoteEvent> events) {
+        Map<Part, SortedSet<Integer>> ticks = new HashMap<>();
+        for (NoteEvent note : events) {
+            ticks.computeIfAbsent(part(note), ignored -> new TreeSet<>()).add(note.mcTick());
+        }
+        int total = 0;
+        for (SortedSet<Integer> laneTicks : ticks.values()) {
+            Integer previous = null;
+            for (int tick : laneTicks) {
+                if (previous == null) total++;
+                else total += (quantizedGap(tick - previous) + 7) / 8;
+                previous = tick;
+            }
+        }
+        return total;
     }
 
     public static int maxPhysicalRepeaterCount(List<NoteEvent> events) {
