@@ -5,6 +5,7 @@ on:
     branches:
       - fabric-midi-gui-1.20.4
       - midipack-0.1.2
+      - midipack-0.1.3
   pull_request:
     branches:
       - fabric-midi-gui-1.20.4
@@ -35,6 +36,6 @@ jobs:
       - name: Upload mod JARs
         uses: actions/upload-artifact@v4
         with:
-          name: midipack-fabric-1.20.4-0.1.2
+          name: midipack-fabric-1.20.4-0.1.3
           path: fabric-mod/build/libs/*.jar
           if-no-files-found: error
