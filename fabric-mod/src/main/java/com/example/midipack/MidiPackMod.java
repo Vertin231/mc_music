@@ -108,10 +108,17 @@ public final class MidiPackMod implements ModInitializer {
             player.sendMessage(Text.literal("声部数量超过限制：最多支持 "+DatapackGenerator.MAX_PARTS+" 条并行轨道。"),false);
             return false;
         }
-        int longestLane=DatapackGenerator.maxPartSize(events);
-        BlockPos end=origin.add((longestLane-1)*3+1,1,Math.max(0,parts-1)*3);
-        if(!world.getWorldBorder().contains(origin)||!world.getWorldBorder().contains(end)) {
-            player.sendMessage(Text.literal("多声部线性布局超出世界边界，请调整 X/Z 起点。"),false); return false;
+        int repeaters=DatapackGenerator.maxPhysicalRepeaterCount(events);
+        if(repeaters>DatapackGenerator.MAX_PHYSICAL_REPEATERS) {
+            player.sendMessage(Text.literal("红石中继器数量超过安全上限："+DatapackGenerator.MAX_PHYSICAL_REPEATERS+" 个。"),false);
+            return false;
+        }
+        int chordSize=DatapackGenerator.maxChordSize(events);
+        int laneSpacing=chordSize+2;
+        BlockPos start=origin.add(-1,0,0);
+        BlockPos end=origin.add((repeaters-1)*3+2,2,Math.max(0,parts-1)*laneSpacing+chordSize-1);
+        if(!world.getWorldBorder().contains(start)||!world.getWorldBorder().contains(end)) {
+            player.sendMessage(Text.literal("实体红石轨道超出世界边界，请调整 X/Z 起点。"),false); return false;
         }
         return true;
     }
@@ -127,11 +134,12 @@ public final class MidiPackMod implements ModInitializer {
             int parts=DatapackGenerator.countParts(events);
             player.sendMessage(Text.literal("已导入 "+events.size()+" 个音符事件，识别出 "+parts
                     +" 条声部轨道（Track + Channel）。"),false);
-            player.sendMessage(Text.literal("首条轨道起点（支撑方块）："+origin.getX()+" "+origin.getY()+" "+origin.getZ()
-                    +"；声部沿 +Z 分行，音符按时间顺序沿 +X 排列。"),false);
+            player.sendMessage(Text.literal("实体红石轨道起点（首个中继器支撑方块）："+origin.getX()+" "+origin.getY()+" "+origin.getZ()
+                    +"；声部沿 +Z 分行，红石链沿 +X 延伸。"),false);
             player.sendMessage(Text.literal("playsound：/function "+soundNs+":play"),false);
-            player.sendMessage(Text.literal("线性音符盒轨道：/function "+blockNs+":play"),false);
-            player.sendMessage(Text.literal("每个音符事件对应一个音符盒站点；所有声部共用 50 ms 游戏刻时钟。建议先备份存档。"),false);
+            player.sendMessage(Text.literal("实体红石音符盒轨道：/function "+blockNs+":play"),false);
+            player.sendMessage(Text.literal("已生成中继器、红石粉和音符盒；不同声部独立，和弦并行。实体红石最短间隔按 4 游戏刻量化。"),false);
+            player.sendMessage(Text.literal("请先确保放置区域为空并备份存档；停止时已进入线路的脉冲可能播放完当前剩余音符。"),false);
         } catch(Exception e) {
             player.sendMessage(Text.literal("数据包生成失败："+safeMessage(e)),false);
         }
