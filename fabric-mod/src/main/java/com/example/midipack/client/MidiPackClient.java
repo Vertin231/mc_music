@@ -11,6 +11,7 @@ import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.text.Text;
+import net.minecraft.util.math.BlockPos;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.Locale;
@@ -29,12 +30,11 @@ public final class MidiPackClient implements ClientModInitializer {
         });
     }
 
-    /** May be called by the AWT file-picker thread; all Minecraft access is marshalled to the client thread. */
-    public static void upload(String filename, byte[] data) {
-        MinecraftClient.getInstance().execute(() -> uploadOnClientThread(filename, data));
+    public static void upload(String filename, byte[] data, BlockPos origin) {
+        MinecraftClient.getInstance().execute(() -> uploadOnClientThread(filename, data, origin));
     }
 
-    private static void uploadOnClientThread(String filename, byte[] data) {
+    private static void uploadOnClientThread(String filename, byte[] data, BlockPos origin) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.getNetworkHandler() == null) {
             notifyUser("请先进入一个已启用 MIDI Pack 的世界或服务器。");
@@ -53,9 +53,12 @@ public final class MidiPackClient implements ClientModInitializer {
 
         PacketByteBuf buf = PacketByteBufs.create();
         buf.writeString(filename);
+        buf.writeInt(origin.getX());
+        buf.writeInt(origin.getY());
+        buf.writeInt(origin.getZ());
         buf.writeByteArray(data);
         ClientPlayNetworking.send(MidiPackMod.UPLOAD_ID, buf);
-        notifyUser("正在上传并生成 MIDI 数据包……");
+        notifyUser("正在上传 MIDI；音符盒起点：" + origin.getX() + ", " + origin.getY() + ", " + origin.getZ());
     }
 
     public static void action(String namespace, String action) {

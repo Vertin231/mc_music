@@ -1,5 +1,7 @@
 package com.example.midipack.client;
 
+import net.minecraft.util.math.BlockPos;
+
 import java.awt.EventQueue;
 import java.awt.FileDialog;
 import java.awt.Frame;
@@ -10,7 +12,7 @@ import java.nio.file.Path;
 public final class MidiFilePicker {
     private MidiFilePicker() {}
 
-    public static void open() {
+    public static void open(BlockPos origin) {
         EventQueue.invokeLater(() -> {
             Frame owner = new Frame();
             FileDialog dialog = new FileDialog(owner, "Select a MIDI file", FileDialog.LOAD);
@@ -29,7 +31,7 @@ public final class MidiFilePicker {
                     MidiPackClient.notifyUser("MIDI 文件必须大于 0 且不超过 512 KiB。");
                     return;
                 }
-                MidiPackClient.upload(selected.getFileName().toString(), Files.readAllBytes(selected));
+                MidiPackClient.upload(selected.getFileName().toString(), Files.readAllBytes(selected), origin);
             } catch (Exception e) {
                 String message = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
                 MidiPackClient.notifyUser("读取 MIDI 失败：" + message);

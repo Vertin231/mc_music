@@ -29,8 +29,12 @@ public final class MidiPackMod implements ModInitializer {
         ServerPlayNetworking.registerGlobalReceiver(UPLOAD_ID,
                 (server, player, handler, buf, responseSender) -> {
                     String filename = buf.readString(128);
+                    int x = buf.readInt();
+                    int y = buf.readInt();
+                    int z = buf.readInt();
                     byte[] bytes = buf.readByteArray(MAX_MIDI_BYTES);
-                    server.execute(() -> importMidi(server, player, filename, bytes));
+                    BlockPos origin = new BlockPos(x, y, z);
+                    server.execute(() -> importMidi(server, player, filename, bytes, origin));
                 });
         ServerPlayNetworking.registerGlobalReceiver(ACTION_ID,
                 (server, player, handler, buf, responseSender) -> {
@@ -57,7 +61,7 @@ public final class MidiPackMod implements ModInitializer {
     }
 
     private static void importMidi(MinecraftServer server, ServerPlayerEntity player,
-                                   String filename, byte[] bytes) {
+                                   String filename, byte[] bytes, BlockPos origin) {
         if (!player.hasPermissionLevel(2)) {
             player.sendMessage(Text.literal("需要管理员权限才能导入 MIDI。"), false);
             return;
@@ -81,6 +85,8 @@ public final class MidiPackMod implements ModInitializer {
             return;
         }
 
+        if (!validPlacement(server, origin, player)) return;
+
         final Path midiFile;
         try {
             Path worldRoot = server.getSavePath(WorldSavePath.ROOT).toAbsolutePath().normalize();
@@ -94,7 +100,6 @@ public final class MidiPackMod implements ModInitializer {
             return;
         }
 
-        // Parse potentially complex MIDI files away from the server tick thread.
         CompletableFuture.supplyAsync(() -> {
             try {
                 return MidiParser.parse(midiFile.toFile());
@@ -107,25 +112,43 @@ public final class MidiPackMod implements ModInitializer {
                 player.sendMessage(Text.literal("MIDI 解析失败：" + safeMessage(cause)), false);
                 return;
             }
-            generateDatapacks(server, player, safeName, events);
+            generateDatapacks(server, player, safeName, events, origin);
         }));
     }
 
+    private static boolean validPlacement(MinecraftServer server, BlockPos origin, ServerPlayerEntity player) {
+        int maxY = server.getOverworld().getTopY();
+        if (origin.getY() < server.getOverworld().getBottomY()
+                || origin.getY() + 2 >= maxY) {
+            player.sendMessage(Text.literal("放置 Y 坐标超出世界高度范围。"), false);
+            return false;
+        }
+        // Worst-case layout has 256 stations, spaced three blocks apart along +X.
+        BlockPos end = origin.add(255 * 3 + 2, 1, 0);
+        if (!server.getOverworld().getWorldBorder().contains(origin)
+                || !server.getOverworld().getWorldBorder().contains(end)) {
+            player.sendMessage(Text.literal("线性音符盒布局超出世界边界，请调整 X/Z 起点。"), false);
+            return false;
+        }
+        return true;
+    }
+
     private static void generateDatapacks(MinecraftServer server, ServerPlayerEntity player,
-                                          String safeName, List<NoteEvent> events) {
+                                          String safeName, List<NoteEvent> events, BlockPos origin) {
         try {
             String base = safeName.replaceFirst("(?i)\\.(mid|midi)$", "");
-            BlockPos spawn = server.getOverworld().getSpawnPos().up(1);
             Path datapacks = server.getSavePath(WorldSavePath.DATAPACKS);
             String soundNs = DatapackGenerator.generate(datapacks, base, events,
-                    DatapackGenerator.Backend.PLAYSOUND, spawn);
+                    DatapackGenerator.Backend.PLAYSOUND, origin);
             String blockNs = DatapackGenerator.generate(datapacks, base, events,
-                    DatapackGenerator.Backend.NOTE_BLOCK, spawn);
+                    DatapackGenerator.Backend.NOTE_BLOCK, origin);
             server.getCommandManager().executeWithPrefix(server.getCommandSource(), "reload");
             player.sendMessage(Text.literal("已导入 " + events.size() + " 个音符事件。"), false);
+            player.sendMessage(Text.literal("音符盒线性布局起点（支撑方块）：" + origin.getX() + " "
+                    + origin.getY() + " " + origin.getZ() + "，沿 +X 方向延伸。"), false);
             player.sendMessage(Text.literal("playsound：/function " + soundNs + ":play"), false);
             player.sendMessage(Text.literal("音符盒：/function " + blockNs + ":play"), false);
-            player.sendMessage(Text.literal("使用音符盒前，请确认世界出生点附近有足够空地。"), false);
+            player.sendMessage(Text.literal("生成结构前请清空起点沿 +X 方向约 770 格的区域，并备份存档。"), false);
         } catch (Exception e) {
             player.sendMessage(Text.literal("数据包生成失败：" + safeMessage(e)), false);
         }

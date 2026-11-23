@@ -9,6 +9,7 @@ import java.nio.file.*;
 import java.util.*;
 import java.util.stream.Collectors;
 
+/** Datapack generator. The physical note-block backend is laid out on one straight X-axis row. */
 public final class DatapackGenerator {
     public enum Backend { PLAYSOUND, NOTE_BLOCK }
     private DatapackGenerator() {}
@@ -81,32 +82,32 @@ public final class DatapackGenerator {
                 commands.put(entry.getKey(), lines);
             }
         } else {
-            Map<String, Integer> columns = new LinkedHashMap<>();
+            Map<String, Integer> stations = new LinkedHashMap<>();
             for (NoteEvent note : events) {
                 String key = blockInstrument(note) + ":" + foldNote(note.midiNote());
-                columns.computeIfAbsent(key, ignored -> columns.size());
+                stations.computeIfAbsent(key, ignored -> stations.size());
             }
-            if (columns.size() > 256) {
+            if (stations.size() > 256) {
                 throw new IllegalArgumentException("音符盒音色/音高组合超过 256 种，无法安全铺设。");
             }
+
             List<String> setup = new ArrayList<>();
-            Map<String, BlockPos> controls = new HashMap<>();
-            for (var entry : columns.entrySet()) {
+            Map<String, BlockPos> triggers = new LinkedHashMap<>();
+            for (var entry : stations.entrySet()) {
                 String[] parts = entry.getKey().split(":");
                 String instrument = parts[0];
                 int note = Integer.parseInt(parts[1]);
-                int index = entry.getValue();
-                // 3-block spacing prevents one redstone block from powering two neighboring note blocks.
-                int x = origin.getX() + (index % 16) * 3;
-                int y = origin.getY() + 2;
-                int z = origin.getZ() + (index / 16) * 3;
-                BlockPos base = new BlockPos(x, y - 1, z);
-                BlockPos block = new BlockPos(x, y, z);
-                BlockPos control = new BlockPos(x + 1, y, z);
-                setup.add("setblock " + pos(base) + " " + baseBlock(instrument) + " keep");
-                setup.add("setblock " + pos(block) + " minecraft:note_block[instrument="
+                // Every station is on the same X-axis: support block, note block, then its side trigger.
+                int x = origin.getX() + entry.getValue() * 3;
+                int y = origin.getY();
+                int z = origin.getZ();
+                BlockPos support = new BlockPos(x, y, z);
+                BlockPos noteBlock = new BlockPos(x, y + 1, z);
+                BlockPos trigger = new BlockPos(x + 1, y + 1, z);
+                setup.add("setblock " + pos(support) + " " + baseBlock(instrument) + " keep");
+                setup.add("setblock " + pos(noteBlock) + " minecraft:note_block[instrument="
                         + instrument + ",note=" + note + ",powered=false] keep");
-                controls.put(entry.getKey(), control);
+                triggers.put(entry.getKey(), trigger);
             }
             write(functions.resolve("setup.mcfunction"), String.join("\n", setup) + "\n");
 
@@ -114,9 +115,9 @@ public final class DatapackGenerator {
             stopLines.add("scoreboard players set @s " + playing + " 0");
             stopLines.add("scoreboard players set @s " + objective + " 0");
             stopLines.add("stopsound @s record");
-            for (BlockPos control : controls.values()) {
-                stopLines.add("execute if block " + pos(control)
-                        + " minecraft:redstone_block run setblock " + pos(control)
+            for (BlockPos trigger : triggers.values()) {
+                stopLines.add("execute if block " + pos(trigger)
+                        + " minecraft:redstone_block run setblock " + pos(trigger)
                         + " minecraft:air replace");
             }
             write(functions.resolve("stop.mcfunction"), String.join("\n", stopLines) + "\n");
@@ -124,17 +125,17 @@ public final class DatapackGenerator {
             for (var entry : grouped.entrySet()) {
                 int tick = entry.getKey();
                 List<String> lines = commands.computeIfAbsent(tick, ignored -> new ArrayList<>());
-                Set<String> fired = new HashSet<>();
+                Set<String> firedThisTick = new HashSet<>();
                 for (NoteEvent note : entry.getValue()) {
                     String key = blockInstrument(note) + ":" + foldNote(note.midiNote());
-                    if (!fired.add(key)) continue;
-                    BlockPos control = controls.get(key);
-                    lines.add("execute if block " + pos(control) + " minecraft:air run setblock "
-                            + pos(control) + " minecraft:redstone_block replace");
+                    if (!firedThisTick.add(key)) continue;
+                    BlockPos trigger = triggers.get(key);
+                    lines.add("execute if block " + pos(trigger) + " minecraft:air run setblock "
+                            + pos(trigger) + " minecraft:redstone_block replace");
                     commands.computeIfAbsent(tick + 1, ignored -> new ArrayList<>())
-                            .add(0, "execute if block " + pos(control)
+                            .add(0, "execute if block " + pos(trigger)
                                     + " minecraft:redstone_block run setblock "
-                                    + pos(control) + " minecraft:air replace");
+                                    + pos(trigger) + " minecraft:air replace");
                 }
             }
         }
