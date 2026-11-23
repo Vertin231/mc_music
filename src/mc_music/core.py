@@ -1,4 +1,4 @@
-"""Immutable score model. All positions and durations are quarter-note Fractions."""
+"""Immutable musical score model with exact quarter-note timing."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -7,7 +7,7 @@ from fractions import Fraction
 from math import isfinite
 import operator
 
-from .timing import as_fraction
+from .timing import PPQ_DEFAULT, as_fraction
 
 
 class Instrument(IntEnum):
@@ -65,6 +65,16 @@ class Measure:
         object.__setattr__(self, "length", length)
         object.__setattr__(self, "notes", tuple(sorted(notes, key=lambda n: (n.start, n.midi))))
 
+    def at(self, start):
+        start = as_fraction(start, "start")
+        return tuple(note for note in self.notes if note.start == start)
+
+    def chords(self):
+        groups = {}
+        for note in self.notes:
+            groups.setdefault(note.start, []).append(note)
+        return {start: tuple(notes) for start, notes in sorted(groups.items())}
+
 
 @dataclass(frozen=True, slots=True)
 class Part:
@@ -89,6 +99,10 @@ class Part:
 
     def total_beats(self) -> Fraction:
         return sum((m.length for m in self.measures), Fraction(0))
+
+    def to_matrix(self, ppq: int = PPQ_DEFAULT, ties=()):
+        from .matrix import score_to_matrix
+        return score_to_matrix(Score(120, (self,)), ppq, {0: tuple(ties)})
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,3 +134,7 @@ class Score:
             for start, note in part.iter_absolute():
                 events.append((start, part_index, part.instrument, note))
         return tuple(sorted(events, key=lambda e: (e[0], e[1], e[3].midi)))
+
+    def to_matrix(self, ppq: int = PPQ_DEFAULT, ties_by_part_index=None):
+        from .matrix import score_to_matrix
+        return score_to_matrix(self, ppq, ties_by_part_index)
