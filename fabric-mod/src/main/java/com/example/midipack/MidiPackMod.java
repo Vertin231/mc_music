@@ -121,7 +121,7 @@ public final class MidiPackMod implements ModInitializer {
         }
         int chordRadius=(chordSize+1)/2;
         int laneSpacing=chordRadius*2+2;
-        BlockPos start=origin.add(-1,0,-chordRadius);
+        BlockPos start=origin.add(-1,0,-chordRadius-1);
         BlockPos end=origin.add((repeaters-1)*3+2,2,Math.max(0,parts-1)*laneSpacing+chordRadius);
         if(!world.getWorldBorder().contains(start)||!world.getWorldBorder().contains(end)) {
             player.sendMessage(Text.literal("实体红石轨道超出世界边界，请调整 X/Z 起点。"),false); return false;
@@ -144,7 +144,7 @@ public final class MidiPackMod implements ModInitializer {
                     +"；声部沿 +Z 分行，红石链沿 +X 延伸。"),false);
             player.sendMessage(Text.literal("playsound：/function "+soundNs+":play"),false);
             player.sendMessage(Text.literal("实体红石音符盒轨道：/function "+blockNs+":play"),false);
-            player.sendMessage(Text.literal("已生成中继器、红石粉和音符盒；不同声部独立，和弦并行。实体红石最短间隔按 6 游戏刻量化。"),false);
+            player.sendMessage(Text.literal("已生成中继器、红石粉、红石灯和音符盒；红石灯随音符事件闪亮，音色方块下方带支撑。不同声部独立，和弦并行；最短间隔按 6 游戏刻量化。"),false);
             player.sendMessage(Text.literal("请先确保放置区域为空并备份存档；停止时已进入线路的脉冲可能播放完当前剩余音符。"),false);
         } catch(Exception e) {
             player.sendMessage(Text.literal("数据包生成失败："+safeMessage(e)),false);
