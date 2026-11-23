@@ -11,6 +11,10 @@ on:
       - "fabric-mod/**"
       - ".github/workflows/fabric-mod.yml"
 
+concurrency:
+  group: fabric-mod-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
