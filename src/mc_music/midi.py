@@ -18,7 +18,7 @@ class MidiImportResult:
 
 
 def _gm_family(program: int) -> Instrument:
-    """Collapse the 128 General MIDI programs into the six supported families."""
+    """Collapse General MIDI programs into the six currently supported families."""
     if 0 <= program <= 7:
         return Instrument.PIANO
     if 8 <= program <= 15:
@@ -31,16 +31,14 @@ def _gm_family(program: int) -> Instrument:
         return Instrument.VIOLIN
     if 73 <= program <= 79:
         return Instrument.FLUTE
-    # Preserve a usable output instead of silently dropping unsupported timbres.
     return Instrument.PIANO
 
 
 def load_midi(path: str | Path, *, include_drums: bool = False) -> MidiImportResult:
-    """Read a PPQN MIDI file and return a Score plus import warnings.
+    """Read a PPQN MIDI file into a Fraction-based Score.
 
-    Tempo and time signature changes after tick zero are rejected because Score
-    currently models one global BPM and one measure structure. Musical positions
-    remain exact Fractions of quarter-note beats.
+    The current Score model has one global tempo and meter, so tempo or
+    time-signature changes after tick zero are rejected explicitly.
     """
     midi_file = mido.MidiFile(filename=str(path))
     if midi_file.type == 2:
@@ -59,19 +57,20 @@ def load_midi(path: str | Path, *, include_drums: bool = False) -> MidiImportRes
                 if tick == 0:
                     tempo = msg.tempo
                 else:
-                    raise ValueError("tempo changes are not yet supported; found a change after tick 0")
+                    raise ValueError("tempo changes after tick 0 are not yet supported")
             elif msg.type == "time_signature":
                 if tick == 0:
                     numerator, denominator = msg.numerator, msg.denominator
                 else:
-                    raise ValueError("time-signature changes are not yet supported; found a change after tick 0")
+                    raise ValueError("time-signature changes after tick 0 are not yet supported")
 
-    bpm = 60_000_000 / tempo
+    bpm = Fraction(60_000_000, tempo)
     measure_beats = Fraction(numerator * 4, denominator)
     programs = defaultdict(int)
     active = defaultdict(deque)
     raw_notes = defaultdict(list)
     abs_tick = 0
+    drums_skipped = False
 
     for msg in mido.merge_tracks(midi_file.tracks):
         abs_tick += msg.time
@@ -87,47 +86,57 @@ def load_midi(path: str | Path, *, include_drums: bool = False) -> MidiImportRes
         elif msg.type in ("note_off", "note_on"):
             key = (channel, msg.note)
             if not active[key]:
-                warnings.append(f"ignored unmatched note-off: channel={channel}, pitch={msg.note}, tick={abs_tick}")
+                warnings.append(
+                    f"ignored unmatched note-off: channel={channel}, pitch={msg.note}, tick={abs_tick}"
+                )
                 continue
             start_tick, velocity, program = active[key].popleft()
             if channel == 9 and not include_drums:
+                drums_skipped = True
                 continue
-            if abs_tick <= start_tick:
-                continue
-            raw_notes[(channel, program)].append((
-                Fraction(start_tick, midi_file.ticks_per_beat),
-                Fraction(abs_tick - start_tick, midi_file.ticks_per_beat),
-                int(msg.note if hasattr(msg, "note") else key[1]),
-                int(velocity),
-            ))
+            if abs_tick > start_tick:
+                raw_notes[(channel, program)].append((
+                    Fraction(start_tick, midi_file.ticks_per_beat),
+                    Fraction(abs_tick - start_tick, midi_file.ticks_per_beat),
+                    int(key[1]),
+                    int(velocity),
+                ))
 
-    dangling = [(key, len(queue)) for key, queue in active.items() if queue]
+    dangling = sum(len(queue) for queue in active.values())
     if dangling:
-        raise ValueError(f"MIDI contains {sum(n for _, n in dangling)} note-on events without note-off")
-
+        raise ValueError(f"MIDI contains {dangling} note-on events without note-off")
+    if drums_skipped:
+        warnings.append("MIDI percussion channel 10 was skipped (include_drums=True is available in the Python API)")
     if not raw_notes:
         raise ValueError("MIDI contains no pitched note events")
 
     max_end = max(start + duration for notes in raw_notes.values() for start, duration, _, _ in notes)
-    measure_count = max(1, (max_end.numerator * measure_beats.denominator +
-                            max_end.denominator * measure_beats.numerator - 1) //
-                           (max_end.denominator * measure_beats.numerator))
+    measure_ratio = max_end / measure_beats
+    measure_count = max(1, (measure_ratio.numerator + measure_ratio.denominator - 1) // measure_ratio.denominator)
     measure_lengths = tuple(measure_beats for _ in range(measure_count))
     parts = []
 
+    supported_programs = (
+        set(range(0, 16)) | set(range(24, 48)) | set(range(73, 80))
+    )
     for (channel, program), notes in sorted(raw_notes.items()):
         buckets = [[] for _ in range(measure_count)]
         for start, duration, pitch, velocity in notes:
             measure_index = int(start // measure_beats)
             local_start = start - measure_index * measure_beats
             buckets[measure_index].append(Note(local_start, duration, pitch, velocity))
-        measures = tuple(Measure(length, tuple(bucket)) for length, bucket in zip(measure_lengths, buckets))
+        measures = tuple(
+            Measure(length, tuple(bucket))
+            for length, bucket in zip(measure_lengths, buckets)
+        )
         family = _gm_family(program)
-        if program not in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
-                           24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
-                           38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 73, 74, 75, 76,
-                           77, 78, 79):
-            warnings.append(f"GM program {program} mapped approximately to {family.name}")
-        parts.append(Part(family, measures, name=f"channel-{channel + 1}-program-{program}"))
+        if program not in supported_programs:
+            warnings.append(f"GM program {program} approximated as {family.name}")
+        parts.append(Part(
+            family, measures, name=f"channel-{channel + 1}-program-{program}"
+        ))
 
-    return MidiImportResult(Score(bpm, tuple(parts), title=Path(path).stem), tuple(warnings))
+    return MidiImportResult(
+        Score(bpm, tuple(parts), title=Path(path).stem),
+        tuple(dict.fromkeys(warnings)),
+    )
