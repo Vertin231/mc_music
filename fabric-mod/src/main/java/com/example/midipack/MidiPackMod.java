@@ -144,7 +144,7 @@ public final class MidiPackMod implements ModInitializer {
                     +"；声部沿 +Z 分行，红石链沿 +X 延伸。"),false);
             player.sendMessage(Text.literal("playsound：/function "+soundNs+":play"),false);
             player.sendMessage(Text.literal("实体红石音符盒轨道：/function "+blockNs+":play"),false);
-            player.sendMessage(Text.literal("已生成中继器、红石粉和音符盒；不同声部独立，和弦并行。实体红石最短间隔按 4 游戏刻量化。"),false);
+            player.sendMessage(Text.literal("已生成中继器、红石粉和音符盒；不同声部独立，和弦并行。实体红石最短间隔按 6 游戏刻量化。"),false);
             player.sendMessage(Text.literal("请先确保放置区域为空并备份存档；停止时已进入线路的脉冲可能播放完当前剩余音符。"),false);
         } catch(Exception e) {
             player.sendMessage(Text.literal("数据包生成失败："+safeMessage(e)),false);
