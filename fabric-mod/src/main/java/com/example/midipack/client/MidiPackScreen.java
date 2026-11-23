@@ -38,7 +38,7 @@ public class MidiPackScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        renderBackground(context);
+        renderBackground(context, mouseX, mouseY, delta);
         context.drawCenteredTextWithShadow(textRenderer, title, width / 2, height / 2 - 116, 0xFFFFFF);
         context.drawCenteredTextWithShadow(textRenderer,
                 Text.literal("Current datapack namespace: " + MidiPackClient.lastNamespace),
