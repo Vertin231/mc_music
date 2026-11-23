@@ -150,7 +150,7 @@ public final class DatapackGenerator {
                 byPart.computeIfAbsent(part(note), ignored -> new ArrayList<>()).add(note);
             }
 
-            int laneSpacing = chordRadius(maxChordSize(physicalEvents)) * 2 + 2;
+            int laneSpacing = chordRadius(maxChordSize(events)) * 2 + 2;
             String inputPosition = (origin.getX() - 1) + " " + (origin.getY() + 1)
                     + " " + origin.getZ();
             StringBuilder setup = new StringBuilder();
