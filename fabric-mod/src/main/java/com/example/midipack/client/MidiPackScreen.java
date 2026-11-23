@@ -18,7 +18,7 @@ public final class MidiPackScreen extends Screen {
         int center = width / 2;
         int top = Math.max(12, height / 2 - 116);
         BlockPos current = MinecraftClient.getInstance().player == null
-                ? BlockPos.ORIGIN : MinecraftClient.getInstance().player.getBlockPos();
+                ? BlockPos.ORIGIN : MinecraftClient.getInstance().player.getBlockPos().down();
 
         xField = new TextFieldWidget(textRenderer, center - 108, top + 28, 66, 20, Text.literal("X"));
         yField = new TextFieldWidget(textRenderer, center - 33, top + 28, 66, 20, Text.literal("Y"));
@@ -30,7 +30,7 @@ public final class MidiPackScreen extends Screen {
         setCoordinates(current);
 
         addDrawableChild(ButtonWidget.builder(Text.literal("Use my current position"), button -> {
-            if (client != null && client.player != null) setCoordinates(client.player.getBlockPos());
+            if (client != null && client.player != null) setCoordinates(client.player.getBlockPos().down());
         }).dimensions(center - 108, top + 53, 216, 20).build());
 
         addDrawableChild(ButtonWidget.builder(Text.literal("Import MIDI (system picker)"), button -> {
@@ -94,11 +94,11 @@ public final class MidiPackScreen extends Screen {
         context.drawCenteredTextWithShadow(textRenderer, Text.literal("Note-block layout origin (support block)"),
                 width / 2, height / 2 - 101, 0xBFC8D2);
         context.drawCenteredTextWithShadow(textRenderer, Text.literal("X"),
-                width / 2 - 75, height / 2 - 74, 0xFFFFFF);
+                width / 2 - 75, height / 2 - 99, 0xFFFFFF);
         context.drawCenteredTextWithShadow(textRenderer, Text.literal("Y"),
-                width / 2, height / 2 - 74, 0xFFFFFF);
+                width / 2, height / 2 - 99, 0xFFFFFF);
         context.drawCenteredTextWithShadow(textRenderer, Text.literal("Z"),
-                width / 2 + 75, height / 2 - 74, 0xFFFFFF);
+                width / 2 + 75, height / 2 - 99, 0xFFFFFF);
         context.drawCenteredTextWithShadow(textRenderer,
                 Text.literal("Linear layout: all note blocks run along +X"),
                 width / 2, height / 2 + 99, 0xA0A0A0);
