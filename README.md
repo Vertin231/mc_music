@@ -115,6 +115,6 @@ The project is being developed on the `midi-to-noteblock-datapack` branch. The o
 
 ## Fabric GUI mod (Minecraft 1.20.4)
 
-A separate Java 17 Fabric project now lives in [`fabric-mod/`](fabric-mod/README.md). It adds an in-game MIDI control screen (press **M**), a native OS file picker, server-side MIDI import, and two generated datapack playback backends: `playsound` and physical note blocks pulsed by redstone blocks.
+A separate Java 17 Fabric project now lives in [`fabric-mod/`](fabric-mod/README.md). It adds an in-game MIDI control screen (press **M**), an in-game file browser, server-side MIDI import, and two datapack backends: `playsound` and physical note blocks driven by redstone repeaters and dust.
 
 Build instructions and current limitations are documented in [fabric-mod/README.md](fabric-mod/README.md).
