@@ -31,7 +31,7 @@ def test_compiler_creates_setup_and_one_tick_pulse():
     setup = output.files["data/mc_music/function/music/setup.mcfunction"]
     assert "minecraft:note_block[instrument=harp,note=6,powered=false]" in setup
     tick0 = output.files["data/mc_music/function/music/tick_00000000.mcfunction"]
-    tick10 = output.files["data/mc_music/function/music/tick_00000010.mcfunction"]
+    tick10 = output.files["data/mc_music/function/music/tick_00000001.mcfunction"]
     assert "minecraft:redstone_block" in tick0
     assert "minecraft:air" in tick10
 
