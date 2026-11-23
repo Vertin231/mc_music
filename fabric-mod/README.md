@@ -23,9 +23,10 @@ The selected origin `(x, y, z)` is the support block beneath the first repeater 
 - The first repeater is at `(x, y+1, z)`, facing +X.
 - A single redstone-block pulse at `(x-1, y+1, z)` starts the physical chain. The datapack removes this input block after 2 game ticks; all subsequent note triggers are carried by repeaters and redstone dust.
 - Repeaters are placed every 3 blocks along +X. Their delay settings encode the elapsed time between MIDI event groups; long gaps use additional repeater stages.
-- A powered relay block and dust branches trigger the note blocks. Each note block has its own instrument-base block, so transparent instrument bases such as glass do not interrupt the redstone signal.
+- A powered relay block and a continuous redstone-dust bus trigger the note blocks in parallel. A redstone lamp is placed beside each event bus and lights when that event pulse arrives, providing a visual beat indicator.
+- Every instrument-base block has a solid stone support block underneath it. This prevents gravity-affected timbres such as sand (snare) from falling before the note block is placed. Transparent instrument bases such as glass are also supported.
 - Parts are laid out in parallel along +Z. Lane spacing expands to accommodate the largest chord in the imported file.
-- Chords of up to **28 simultaneous notes** are supported (14 dust branches on each side of the lane).
+- Chords of up to **28 simultaneous notes** are supported (14 dust branches on each side of the lane). Each event stage also has a redstone-lamp indicator.
 
 ### Timing limits
 
@@ -61,6 +62,6 @@ The mod jars are written to `build/libs/`.
 5. Click **Import MIDI**, select a .mid / .midi file, and import it.
 6. Run the generated function shown in chat, or use the GUI's Play control.
 
-**Important:** back up the world and choose a clear build area. The setup function uses `setblock ... keep`, so it will not overwrite existing blocks, but any occupied position can prevent part of the circuit from being placed. The redstone input block at `(x-1, y+1, z)` is replaced when playback starts.
+**Important:** back up the world and choose a clear build area. The setup function uses `setblock ... keep`, so it will not overwrite existing blocks, but any occupied position can prevent part of the circuit from being placed. The redstone lamp is a visual event indicator: it lights while the corresponding dust bus is powered. The redstone input block at `(x-1, y+1, z)` is replaced when playback starts.
 
 Stopping removes the input pulse source. A pulse that has already entered a repeater chain may continue through the remaining stages, so a few in-flight notes can still play after Stop is pressed.
