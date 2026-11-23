@@ -12,12 +12,12 @@ Keep the existing backends:
 - **Physical note blocks** — redstone structure in the world; approximate sustain via repeated trigger pulses.
 - **Vanilla playsound** — datapack playback using Minecraft's built-in note-block sound palette.
 
-Add a separate, opt-in **SoundFont (client playback)** mode in a later version:
+Add a separate, opt-in **SoundFont (client playback)** mode. The first implementation uses Java Sound's provider and therefore relies on runtime support for the chosen SoundFont format:
 
-- Load user-selected SF2/SF3 file from local disk; do not bundle copyrighted soundbanks by default.
+- Load user-selected SoundFont from local disk (SF2 is the recommended format); do not bundle copyrighted soundbanks by default.
 - MIDI program changes, bank selection, Note On/Off, velocity and controller events are sent to the synthesizer, preserving note durations.
 - Playback is local to the player client and will not generate a redstone structure or be audible to other players automatically.
-- Add a clear stop control, volume setting, and import/unload flow; avoid loading files on the server.
+- The first UI exposes local path fields for the SoundFont and MIDI, plus play/stop and volume; files are loaded only on the client.
 
 ## Engine candidates
 
@@ -41,7 +41,7 @@ SpessaSynth is a JavaScript/WebAudio synthesizer. Its rich SF2/SF3/DLS support m
 - **Open minimalistic FM/GM SoundFont** — useful as a small experimental option, but FM-synth timbres are intentionally synthetic rather than sampled-realistic.
 
 
-## Proposed implementation order
+## Prototype limitations\n\n- This first implementation is client-local and does not sync to other players.\n- Java Sound support for SF2 depends on the synthesizer provider in the bundled Java runtime. Unsupported formats or providers report an error.\n- GUI path entry is manual; no native desktop file dialog is used (to avoid AWT headless failures).\n- Program-change behavior and playback fidelity still need runtime testing on Windows with Minecraft's Java runtime.\n\n## Proposed implementation order
 
 1. Prototype loading a user-selected SF2 into Java Sound and report provider, bank name, preset count, and load failures.
 2. Build a small client-side test that plays a few notes and verifies Note Off / velocity / program changes.
