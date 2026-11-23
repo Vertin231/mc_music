@@ -29,7 +29,7 @@ The selected origin `(x, y, z)` is the support block beneath the first repeater 
 
 ### Timing limits
 
-Vanilla repeaters have settings of 1–4 redstone ticks, equivalent to 2–8 Minecraft game ticks. To ensure a pulse can turn off before the next one arrives, the physical backend enforces at least **4 game ticks (200 ms)** between distinct event groups in the same part. Gaps are rounded upward to an even number of game ticks; longer gaps are represented by multiple repeaters. Fast MIDI passages can therefore be stretched. The playsound backend retains its separate game-tick scheduler and is not subject to this physical-circuit quantization.
+Vanilla repeaters have settings of 1–4 redstone ticks, equivalent to 2–8 Minecraft game ticks. To ensure a pulse can turn off before the next one arrives, the input pulse is held for 4 game ticks and the physical backend enforces at least **6 game ticks (300 ms)** between distinct event groups in the same part. Gaps are rounded upward to an even number of game ticks; longer gaps are represented by multiple repeaters. Fast MIDI passages can therefore be stretched. The playsound backend retains its separate game-tick scheduler and is not subject to this physical-circuit quantization.
 
 Vanilla note blocks are one-shot/percussive. MIDI note-off duration and velocity cannot be represented by the physical note-block backend. GM programs are approximated by vanilla note-block timbres, and pitches are folded into the vanilla note-block range.
 
