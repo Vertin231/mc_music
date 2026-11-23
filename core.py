@@ -3,22 +3,30 @@ from enum import IntEnum
 from fractions import Fraction
 from math import isfinite
 from collections.abc import Iterator
+import operator
+import numpy as np
+from timing import PPQ_DEFAULT, fraction_to_ppq
+from matrix import NoteMatrix
 
 # Utility
 
 def as_fraction(value, field_name: str) -> Fraction:
     """
-    Convert an integer or Fraction into Fraction.
-    Floats are rejected to avoid floating-point inaccuracies.
+    Convert an integer-like value or Fraction into Fraction.
+    Floats and bools are rejected to avoid floating-point inaccuracies.
+    NumPy integer types are accepted through their __index__ protocol.
     """
     if isinstance(value, Fraction):
         return value
-    if type(value) is int:
-        return Fraction(value)
-    raise TypeError(
-        f"{field_name} must be an int or Fraction, "
-        f"got {type(value).__name__}"
-    )
+    if isinstance(value, bool):
+        raise TypeError(f"{field_name} must be an int or Fraction, got bool")
+    try:
+        return Fraction(operator.index(value))
+    except TypeError:
+        raise TypeError(
+            f"{field_name} must be an int or Fraction, "
+            f"got {type(value).__name__}"
+        ) from None
 
 # Instrument
 
@@ -30,10 +38,26 @@ class Instrument(IntEnum):
     BASS = 4
     BELL = 5
 
+# Provisional mapping for Minecraft note-block instruments.
+# This is a backend mapping, not part of the music representation.
+NOTE_BLOCK_INSTRUMENT = {
+    Instrument.PIANO: "harp",
+    Instrument.VIOLIN: "harp",   # provisional placeholder
+    Instrument.FLUTE: "flute",
+    Instrument.GUITAR: "guitar",
+    Instrument.BASS: "bass",
+    Instrument.BELL: "bell",
+}
+
 # Note
 
 @dataclass(frozen=True, slots=True)
 class Note:
+    """
+    A single note event.
+    Velocity is in the range 1..127; velocity 0 (MIDI note-off convention)
+    is not represented here. Note-off is determined by start + duration.
+    """
     start: Fraction
     duration: Fraction
     midi: int
@@ -55,14 +79,24 @@ class Note:
         if self.duration <= 0:
             raise ValueError("duration must be positive")
 
-        if type(self.midi) is not int:
+        if isinstance(self.midi, bool):
             raise TypeError("midi must be an integer")
+        try:
+            midi = operator.index(self.midi)
+        except TypeError:
+            raise TypeError("midi must be an integer") from None
+        object.__setattr__(self, "midi", midi)
 
         if not 0 <= self.midi <= 127:
             raise ValueError("midi must be between 0 and 127")
 
-        if type(self.velocity) is not int:
+        if isinstance(self.velocity, bool):
             raise TypeError("velocity must be an integer")
+        try:
+            velocity = operator.index(self.velocity)
+        except TypeError:
+            raise TypeError("velocity must be an integer") from None
+        object.__setattr__(self, "velocity", velocity)
 
         if not 1 <= self.velocity <= 127:
             raise ValueError("velocity must be between 1 and 127")
@@ -75,6 +109,13 @@ class Note:
 
 @dataclass(frozen=True, slots=True)
 class Measure:
+    """
+    A measure containing measure-relative notes.
+    length is measured in quarter-note units (beats), not seconds or ticks.
+    Accepts a tuple or list of notes and normalizes it to a tuple.
+    Notes must begin inside the measure, but may extend past its end
+    to represent a sustained event across a barline. Tie segments are separate notes.
+    """
 
     length: Fraction
     notes: tuple[Note, ...] = ()
@@ -97,11 +138,10 @@ class Measure:
             if not isinstance(note, Note):
                 raise TypeError("notes must contain Note objects")
 
-            if note.end > self.length:
+            if note.start >= self.length:
                 raise ValueError(
-                    f"Note exceeds measure boundary: "
-                    f"start={note.start}, end={note.end}, "
-                    f"length={self.length}"
+                    f"Note onset must be inside measure: "
+                    f"start={note.start}, length={self.length}"
                 )
 
         notes = tuple(
@@ -111,7 +151,11 @@ class Measure:
         object.__setattr__(self, "notes", notes)
 
     def at(self, start: Fraction) -> tuple[Note, ...]:
+        """Return notes whose onset equals start; does not query sustained notes.
 
+        For notes sounding across measure boundaries, use absolute event times
+        (for example Part.iter_absolute() and compare start <= t < end).
+        """
         start = as_fraction(start, "start")
 
         if start < 0:
@@ -138,6 +182,11 @@ class Measure:
 
 @dataclass(frozen=True, slots=True)
 class Part:
+    """
+    One instrument part with a sequence of measures.
+    This class does not check measure alignment against other Parts;
+    use Score for that cross-part constraint.
+    """
 
     instrument: Instrument
     measures: tuple[Measure, ...] = ()
@@ -163,8 +212,12 @@ class Part:
     def measure_start(self, index: int) -> Fraction:
         """Absolute start of the specified measure."""
 
-        if type(index) is not int:
+        if isinstance(index, bool):
             raise TypeError("index must be an integer")
+        try:
+            index = operator.index(index)
+        except TypeError:
+            raise TypeError("index must be an integer") from None
 
         if not 0 <= index < len(self.measures):
             raise IndexError("measure index out of range")
@@ -190,17 +243,29 @@ class Part:
     ) -> tuple[Note, ...]:
         """Return all notes matching the specified location and pitch."""
 
-        if type(measure) is not int:
+        if isinstance(measure, bool):
             raise TypeError("measure must be an integer")
+        try:
+            measure = operator.index(measure)
+        except TypeError:
+            raise TypeError("measure must be an integer") from None
 
         if not 0 <= measure < len(self.measures):
             raise IndexError("measure index out of range")
 
+        start = as_fraction(start, "start")
+
+        if isinstance(midi, bool):
+            raise TypeError("midi must be an integer")
+        try:
+            midi = operator.index(midi)
+        except TypeError:
+            raise TypeError("midi must be an integer") from None
+
         return tuple(
             note
             for note in self.measures[measure].notes
-            if note.start == as_fraction(start, "start")
-            and note.midi == midi
+            if note.start == start and note.midi == midi
         )
 
     def note_at(
@@ -217,27 +282,56 @@ class Part:
             raise KeyError("note not found")
 
         if len(matches) > 1:
-            raise ValueError("multiple matching notes; use notes_at()")
+            raise ValueError(
+                "multiple matching notes; use notes_at() and filter by duration "
+                "or select by index"
+            )
 
         return matches[0]
 
     def iter_absolute(self) -> Iterator[tuple[Fraction, Note]]:
-        """
-        Expand measure-relative note positions into absolute positions.
-        """
-
+        """Expand measure-relative note positions into absolute positions."""
         offset = Fraction(0)
-
         for measure in self.measures:
-
             for note in measure.notes:
                 yield offset + note.start, note
-
             offset += measure.length
 
+    def to_matrix(self, ppq: int = PPQ_DEFAULT, ties=()) -> NoteMatrix:
+        """Convert to absolute PPQ ticks; optionally merge tie chains first."""
+        if ties:
+            from ties import resolve_ties
+            resolved = resolve_ties(self, ties)
+        else:
+            resolved = None
+        source = resolved if resolved is not None else tuple(
+            (start, note.duration, note.midi, note.velocity)
+            for start, note in self.iter_absolute()
+        )
+        starts, durations, midis, velocities, instruments = [], [], [], [], []
+        for event in source:
+            if resolved is not None:
+                start, duration, midi, velocity = (
+                    event.start, event.duration, event.midi, event.velocity
+                )
+            else:
+                start, duration, midi, velocity = event
+            starts.append(fraction_to_ppq(start, ppq))
+            durations.append(fraction_to_ppq(duration, ppq))
+            midis.append(midi)
+            velocities.append(velocity)
+            instruments.append(self.instrument.value)
+        return NoteMatrix(ppq, np.array(starts, dtype=np.int64),
+                        np.array(durations, dtype=np.int64),
+                        np.array(midis, dtype=np.int8),
+                        np.array(velocities, dtype=np.int8),
+                        np.array(instruments, dtype=np.int8))
+
 # Score
+
 @dataclass(frozen=True, slots=True)
 class Score:
+    """A complete score with a shared tempo and aligned measure structure."""
 
     bpm: float
     parts: tuple[Part, ...]
@@ -288,26 +382,64 @@ class Score:
 
         return self.parts[0].total_beats()
 
+    def to_matrix(self, ppq: int = PPQ_DEFAULT, ties_by_part_index=None) -> NoteMatrix:
+        """Flatten the score into one absolute-time NoteMatrix.
+
+        ties_by_part_index maps the zero-based Part index to that Part's Tie tuple.
+        This avoids collisions when multiple Parts use the same Instrument.
+        """
+        ties_by_part_index = ties_by_part_index or {}
+        matrices = [
+            part.to_matrix(ppq, ties=ties_by_part_index.get(index, ()))
+            for index, part in enumerate(self.parts)
+        ]
+        return NoteMatrix(
+            ppq,
+            np.concatenate([m.start for m in matrices]),
+            np.concatenate([m.duration for m in matrices]),
+            np.concatenate([m.midi for m in matrices]),
+            np.concatenate([m.velocity for m in matrices]),
+            np.concatenate([m.instrument for m in matrices]),
+        )
+
+    def absolute_events(
+        self
+    ) -> tuple[tuple[Fraction, Instrument, Note], ...]:
+        """
+        Return a flat, time-sorted event sequence:
+        (absolute_start, instrument, note).
+        This is intended as a convenient entry point for later compilation.
+        """
+
+        events = []
+
+        for part in self.parts:
+            for absolute_start, note in part.iter_absolute():
+                events.append((absolute_start, part.instrument, note))
+
+        return tuple(sorted(
+            events,
+            key=lambda event: (
+                event[0], event[1].value, event[2].midi,
+                event[2].duration, event[2].velocity
+            )
+        ))
+
     def timeline(
         self
     ) -> dict[Fraction, dict[Instrument, tuple[Note, ...]]]:
+        """Return a time-first, instrument-second view of the score."""
 
         raw: dict[
             Fraction,
             dict[Instrument, list[Note]]
         ] = {}
 
-        for part in self.parts:
+        for absolute_start, instrument, note in self.absolute_events():
 
-            for absolute_start, note in part.iter_absolute():
+            by_instrument = raw.setdefault(absolute_start, {})
 
-                by_instrument = raw.setdefault(
-                    absolute_start, {}
-                )
-
-                by_instrument.setdefault(
-                    part.instrument, []
-                ).append(note)
+            by_instrument.setdefault(instrument, []).append(note)
 
         return {
             time: {
